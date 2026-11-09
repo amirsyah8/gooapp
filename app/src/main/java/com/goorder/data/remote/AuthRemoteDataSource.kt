@@ -3,6 +3,7 @@ package com.goorder.data.remote
 import android.content.Context
 import com.goorder.BuildConfig
 import com.goorder.data.PersistentCookieStorage
+import com.goorder.data.local.SessionManager
 import com.goorder.data.remote.dto.*
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -17,7 +18,10 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 
-class AuthRemoteDataSource(context: Context) {
+class AuthRemoteDataSource(
+    context: Context,
+    private val sessionManager: SessionManager = SessionManager(context)
+) {
     private val cookieStorage = PersistentCookieStorage(context)
     private val json = Json {
         ignoreUnknownKeys = true
@@ -38,23 +42,46 @@ class AuthRemoteDataSource(context: Context) {
         }
     }
 
-    suspend fun login(email: String, pass: String): Result<UserDto> {
+    private suspend fun HttpRequestBuilder.addAuthHeader() {
+        val token = sessionManager.getToken()
+        if (!token.isNullOrBlank()) {
+            header(HttpHeaders.Authorization, "Bearer $token")
+        }
+    }
+
+    suspend fun login(email: String, pass: String): Result<LoginResultDto> {
         val query = """
-            mutation Login(${'$'}body: LoginUserDto!) {
-              login(body: ${'$'}body) {
-                id, name, fname, phone, anual, chatId, numberExists,
-                e164, national, country, address, email, createdAt,
-                updatedAt, status, profilePicPath, profilePicId,
-                role { id, type, option, desc }
+            mutation Login(${'$'}input: LoginInput!) {
+              login(input: ${'$'}input) {
+                token
+                message
               }
             }
         """.trimIndent()
 
         val variables = mapOf(
-            "body" to json.encodeToJsonElement(mapOf("email" to email, "pass" to pass))
+            "input" to json.encodeToJsonElement(mapOf("email" to email, "password" to pass))
         )
 
-        return performMutation<LoginResponse>(query, variables) { it.login }
+        return try {
+            val response: GraphQLResponse<LoginResponse> = client.post(BuildConfig.BASE_URL) {
+                contentType(ContentType.Application.Json)
+                setBody(GraphQLRequest(query, variables))
+            }.body()
+
+            if (response.errors != null && response.errors.isNotEmpty()) {
+                Result.failure(Exception(response.errors.first().message))
+            } else {
+                val loginResult = response.data?.login
+                if (loginResult?.token != null) {
+                    Result.success(loginResult)
+                } else {
+                    Result.failure(Exception(loginResult?.message ?: "Login gagal"))
+                }
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
     suspend fun getCurrentUser(): Result<UserDto> {
@@ -71,6 +98,7 @@ class AuthRemoteDataSource(context: Context) {
 
         return try {
             val response: GraphQLResponse<WhoAmIResponse> = client.post(BuildConfig.BASE_URL) {
+                addAuthHeader()
                 contentType(ContentType.Application.Json)
                 setBody(GraphQLRequest(query))
             }.body()
@@ -91,11 +119,11 @@ class AuthRemoteDataSource(context: Context) {
         val query = "mutation Logout { logout }"
         return try {
             val response: GraphQLResponse<Map<String, Boolean>> = client.post(BuildConfig.BASE_URL) {
+                addAuthHeader()
                 contentType(ContentType.Application.Json)
                 setBody(GraphQLRequest(query))
             }.body()
 
-            // Padam cookie lokal walau apa pun hasil dari server untuk keselamatan
             cookieStorage.clear()
 
             if (response.errors != null && response.errors.isNotEmpty()) {
@@ -138,6 +166,7 @@ class AuthRemoteDataSource(context: Context) {
         return try {
             val baseUrl = BuildConfig.BASE_URL.replace("/graphql", "")
             val response: UploadResponse = client.post("${baseUrl}/upload/temp") {
+                addAuthHeader()
                 setBody(MultiPartFormDataContent(
                     formData {
                         append("file", bytes, Headers.build {
@@ -160,6 +189,7 @@ class AuthRemoteDataSource(context: Context) {
     ): Result<UserDto> {
         return try {
             val response: GraphQLResponse<T> = client.post(BuildConfig.BASE_URL) {
+                addAuthHeader()
                 contentType(ContentType.Application.Json)
                 setBody(GraphQLRequest(query, variables))
             }.body()

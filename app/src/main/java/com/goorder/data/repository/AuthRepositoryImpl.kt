@@ -13,7 +13,23 @@ class AuthRepositoryImpl(
 ) : AuthRepository {
 
     override suspend fun login(email: String, pass: String): Result<User> {
-        return remoteDataSource.login(email, pass).map { it.toDomain() }
+        val loginResult = remoteDataSource.login(email, pass).getOrElse {
+            return Result.failure(it)
+        }
+        val token = loginResult.token ?: return Result.failure(Exception("Token tidak dijumpai"))
+        sessionManager.saveToken(token)
+
+        return remoteDataSource.getCurrentUser()
+            .map { userDto ->
+                val user = userDto.toDomain()
+                sessionManager.saveUser(user)
+                user
+            }
+            .recoverCatching {
+                val basicUser = User(email = email)
+                sessionManager.saveUser(basicUser)
+                basicUser
+            }
     }
 
     override suspend fun logout(): Result<Unit> {

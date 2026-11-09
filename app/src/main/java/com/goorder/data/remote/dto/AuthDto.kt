@@ -22,8 +22,14 @@ data class GraphQLError(
 )
 
 @Serializable
+data class LoginResultDto(
+    val token: String? = null,
+    val message: String? = null
+)
+
+@Serializable
 data class LoginResponse(
-    val login: UserDto? = null
+    val login: LoginResultDto? = null
 )
 
 @Serializable
