@@ -55,17 +55,19 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             checkSessionUseCase.getSavedUser().collectLatest { user ->
                 if (user != null) {
                     authState = AuthState.Authenticated(user)
-                    // Connect socket when authenticated
-                    socketManager.connect(
-                        onNotificationReceived = {
-                            syncSession()
-                        },
-                        onPrintQrReceived = { data ->
-                            val newRequest = PrintRequest(data = data)
-                            printRequests = printRequests + newRequest
-                        }
-                    )
-                    socketManager.join(user.id)
+                    val token = sessionManager.getToken()
+                    if (!token.isNullOrBlank()) {
+                        socketManager.connect(
+                            token = token,
+                            onNotificationReceived = {
+                                syncSession()
+                            },
+                            onPrintQrReceived = { data ->
+                                val newRequest = PrintRequest(data = data)
+                                printRequests = printRequests + newRequest
+                            }
+                        )
+                    }
                 } else {
                     authState = AuthState.Unauthenticated
                     // Disconnect socket when not authenticated
