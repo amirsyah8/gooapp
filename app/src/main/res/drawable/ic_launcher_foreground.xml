@@ -1,0 +1,39 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Paper Top -->
+    <path
+        android:fillColor="#64B5F6"
+        android:pathData="M38,28h32v20h-32z" />
+    <!-- Yellow Icon on Top Paper -->
+    <path
+        android:fillColor="#FDD835"
+        android:pathData="M42,32h6v6h-6z" />
+
+    <!-- Printer Body -->
+    <path
+        android:fillColor="#424242"
+        android:pathData="M24,48h60a4,4 0,0 1,4 4v20a4,4 0,0 1,-4 4h-60a4,4 0,0 1,-4 -4v-20a4,4 0,0 1,4 -4z" />
+
+    <!-- Front Panel -->
+    <path
+        android:fillColor="#212121"
+        android:pathData="M28,60h52v8h-52z" />
+
+    <!-- Green LED -->
+    <path
+        android:fillColor="#4CAF50"
+        android:pathData="M78,54a2,2 0,1 1,-4 0 2,2 0,0 1,4 0z" />
+
+    <!-- Paper Bottom -->
+    <path
+        android:fillColor="#64B5F6"
+        android:pathData="M38,76h32v14h-32z" />
+
+    <!-- Lines on Bottom Paper -->
+    <path
+        android:fillColor="#1976D2"
+        android:pathData="M44,82h20v2h-20zM44,86h12v2h-12z" />
+</vector>

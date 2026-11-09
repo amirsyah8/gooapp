@@ -1,0 +1,4 @@
+- [x] Reduce gap in `DashboardScreen.kt`
+- [x] Add `MainScreenPreview` in `MainScreen.kt`
+- [x] Fine-tune padding in `MainScreen.kt`
+- [x] Verify with preview rendering
