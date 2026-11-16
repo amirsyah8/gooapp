@@ -13,10 +13,8 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.goorder.service.BluetoothPrinterService
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 class PrinterViewModel : ViewModel() {
 
@@ -36,25 +34,35 @@ class PrinterViewModel : ViewModel() {
     var errorMessage by mutableStateOf<String?>(null)
         private set
 
+    init {
+        // Pantau singleton instance jika servis sudah berjalan di latar belakang
+        observeServiceInstance(BluetoothPrinterService.instance)
+    }
+
+    private fun observeServiceInstance(service: BluetoothPrinterService?) {
+        service ?: return
+        bluetoothService = service
+        viewModelScope.launch {
+            service.isConnected.collectLatest { isConnected = it }
+        }
+        viewModelScope.launch {
+            service.connectedDeviceName.collectLatest { connectedDeviceName = it }
+        }
+        viewModelScope.launch {
+            service.isConnecting.collectLatest { isConnecting = it }
+        }
+        viewModelScope.launch {
+            service.errorMessage.collectLatest { errorMessage = it }
+        }
+    }
+
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             val binder = service as BluetoothPrinterService.LocalBinder
-            bluetoothService = binder.getService()
+            val s = binder.getService()
+            bluetoothService = s
             isBound = true
-            
-            // Observe states from service
-            viewModelScope.launch {
-                bluetoothService?.isConnected?.collectLatest { isConnected = it }
-            }
-            viewModelScope.launch {
-                bluetoothService?.connectedDeviceName?.collectLatest { connectedDeviceName = it }
-            }
-            viewModelScope.launch {
-                bluetoothService?.isConnecting?.collectLatest { isConnecting = it }
-            }
-            viewModelScope.launch {
-                bluetoothService?.errorMessage?.collectLatest { errorMessage = it }
-            }
+            observeServiceInstance(s)
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -64,30 +72,35 @@ class PrinterViewModel : ViewModel() {
     }
 
     fun bindService(context: Context) {
+        BluetoothPrinterService.startService(context)
         val intent = Intent(context, BluetoothPrinterService::class.java)
-        context.startService(intent) // Start it first to keep it alive
         context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
     }
 
     fun unbindService(context: Context) {
         if (isBound) {
-            context.unbindService(serviceConnection)
+            try {
+                context.unbindService(serviceConnection)
+            } catch (_: Exception) {}
             isBound = false
         }
     }
 
     @SuppressLint("MissingPermission")
     fun connectToDevice(device: BluetoothDevice) {
-        bluetoothService?.connectToDevice(device)
+        bluetoothService?.connectToDevice(device) ?: BluetoothPrinterService.instance?.connectToDevice(device)
+    }
+
+    fun autoConnect() {
+        bluetoothService?.autoConnectToPrinter() ?: BluetoothPrinterService.instance?.autoConnectToPrinter()
     }
 
     fun disconnect() {
-        bluetoothService?.disconnect()
+        bluetoothService?.disconnect() ?: BluetoothPrinterService.instance?.disconnect()
     }
 
     suspend fun printText(text: String): Boolean {
-        return withContext(Dispatchers.IO) {
-            bluetoothService?.printTsplLabel(text) ?: false
-        }
+        val s = bluetoothService ?: BluetoothPrinterService.instance ?: return false
+        return s.printText(text)
     }
 }

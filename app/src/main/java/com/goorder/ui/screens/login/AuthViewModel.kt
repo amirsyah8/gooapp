@@ -18,6 +18,7 @@ import com.goorder.domain.model.User
 import com.goorder.domain.usecase.CheckSessionUseCase
 import com.goorder.domain.usecase.LoginUseCase
 import com.goorder.domain.usecase.LogoutUseCase
+import com.goorder.service.BluetoothPrinterService
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import java.util.UUID
@@ -72,6 +73,18 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             checkSessionUseCase.getSavedUser().collectLatest { user ->
                 if (user != null) {
                     authState = AuthState.Authenticated(user)
+
+                    // Muatkan status auto-print yang disimpan
+                    isAutoPrintEnabled = sessionManager.getAutoPrintEnabled()
+
+                    // MULAKAN PERKHIDMATAN PENCETAK BLUETOOTH DI LATAR BELAKANG (FOREGROUND SERVICE)
+                    // Servis ini akan sentiasa bersambung ke pencetak walaupun aplikasi ditutup/berjalan di background
+                    try {
+                        BluetoothPrinterService.startService(getApplication())
+                    } catch (e: Exception) {
+                        Log.e("AuthViewModel", "Gagal memulakan BluetoothPrinterService", e)
+                    }
+
                     val token = sessionManager.getToken()
                     if (!token.isNullOrBlank()) {
                         socketManager.connect(
@@ -82,6 +95,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                             onPrintQrReceived = { data ->
                                 val newRequest = PrintRequest(data = data)
                                 printRequests = printRequests + newRequest
+                                checkAndAutoPrint(listOf(newRequest))
                             },
                             onOrderUpdated = {
                                 fetchOrdersFromApi()
@@ -97,6 +111,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                         onPrintOrderReceived = { payload ->
                             val newRequest = PrintRequest(data = payload)
                             printRequests = printRequests + newRequest
+                            checkAndAutoPrint(listOf(newRequest))
                         }
                     )
 
@@ -104,6 +119,9 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     fetchCurrentOutletAndOrders()
                 } else {
                     authState = AuthState.Unauthenticated
+                    // Hentikan perkhidmatan pencetak Bluetooth latar belakang bila log keluar
+                    BluetoothPrinterService.stopService(getApplication())
+
                     // Disconnect socket & MQTT when not authenticated
                     socketManager.disconnect()
                     mqttManager.disconnect()
@@ -127,11 +145,31 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleAutoPrint(enabled: Boolean) {
         isAutoPrintEnabled = enabled
+        viewModelScope.launch {
+            sessionManager.saveAutoPrint(enabled)
+        }
     }
 
     fun markAsPrinted(requestId: String) {
         printRequests = printRequests.map {
             if (it.id == requestId) it.copy(isPrinted = true) else it
+        }
+    }
+
+    private fun checkAndAutoPrint(requests: List<PrintRequest>) {
+        if (!isAutoPrintEnabled) return
+        viewModelScope.launch {
+            val service = BluetoothPrinterService.instance
+            if (service != null && service.isConnected.value) {
+                requests.forEach { req ->
+                    if (!req.isPrinted) {
+                        val success = service.printText(req.data)
+                        if (success) {
+                            markAsPrinted(req.id)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -202,7 +240,14 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                         mergedRequests.none { it.id == localReq.id }
                     }
 
+                    val newlyArrivedUnprinted = apiRequests.filter { !it.isPrinted && existingMap[it.id] == null }
+
                     printRequests = mergedRequests + newUniqueLocal
+
+                    // Auto-print order baru yang belum pernah dicetak jika suis auto-print aktif
+                    if (newlyArrivedUnprinted.isNotEmpty()) {
+                        checkAndAutoPrint(newlyArrivedUnprinted)
+                    }
                 }
                 .onFailure { error ->
                     Log.e("AuthViewModel", "Failed to fetch orders by outlet ID: $outletId", error)
@@ -251,6 +296,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     fun logout() {
         viewModelScope.launch {
+            BluetoothPrinterService.stopService(getApplication())
             logoutUseCase()
         }
     }

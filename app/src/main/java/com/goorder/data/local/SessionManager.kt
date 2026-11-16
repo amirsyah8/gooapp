@@ -3,6 +3,7 @@ package com.goorder.data.local
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -23,6 +24,9 @@ class SessionManager(private val context: Context) {
     private val TOKEN_KEY = stringPreferencesKey("auth_token")
     private val OUTLET_ID_KEY = longPreferencesKey("current_outlet_id")
     private val OUTLET_NAME_KEY = stringPreferencesKey("current_outlet_name")
+    private val PRINTER_MAC_KEY = stringPreferencesKey("saved_printer_mac")
+    private val PRINTER_NAME_KEY = stringPreferencesKey("saved_printer_name")
+    private val AUTO_PRINT_KEY = booleanPreferencesKey("auto_print_enabled")
 
     val userData: Flow<User?> = context.dataStore.data.map { preferences ->
         val userJson = preferences[USER_KEY]
@@ -47,6 +51,18 @@ class SessionManager(private val context: Context) {
 
     val outletNameData: Flow<String?> = context.dataStore.data.map { preferences ->
         preferences[OUTLET_NAME_KEY]
+    }
+
+    val printerMacData: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[PRINTER_MAC_KEY]
+    }
+
+    val printerNameData: Flow<String?> = context.dataStore.data.map { preferences ->
+        preferences[PRINTER_NAME_KEY]
+    }
+
+    val autoPrintData: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[AUTO_PRINT_KEY] ?: false
     }
 
     suspend fun getToken(): String? {
@@ -81,12 +97,40 @@ class SessionManager(private val context: Context) {
         return outletNameData.firstOrNull()
     }
 
+    suspend fun savePrinter(mac: String, name: String) {
+        context.dataStore.edit { preferences ->
+            preferences[PRINTER_MAC_KEY] = mac
+            preferences[PRINTER_NAME_KEY] = name
+        }
+    }
+
+    suspend fun getSavedPrinterMac(): String? {
+        return printerMacData.firstOrNull()
+    }
+
+    suspend fun getSavedPrinterName(): String? {
+        return printerNameData.firstOrNull()
+    }
+
+    suspend fun saveAutoPrint(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[AUTO_PRINT_KEY] = enabled
+        }
+    }
+
+    suspend fun getAutoPrintEnabled(): Boolean {
+        return autoPrintData.firstOrNull() ?: false
+    }
+
     suspend fun clearSession() {
         context.dataStore.edit { preferences ->
             preferences.remove(USER_KEY)
             preferences.remove(TOKEN_KEY)
             preferences.remove(OUTLET_ID_KEY)
             preferences.remove(OUTLET_NAME_KEY)
+            preferences.remove(PRINTER_MAC_KEY)
+            preferences.remove(PRINTER_NAME_KEY)
+            preferences.remove(AUTO_PRINT_KEY)
         }
     }
 }

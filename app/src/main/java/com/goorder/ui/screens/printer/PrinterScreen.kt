@@ -116,8 +116,13 @@ fun PrinterScreen(
                     val success = printerViewModel.printText(printData)
                     if (success && order.id != null) {
                         authViewModel.markAsPrinted(order.id.toString())
+                        android.widget.Toast.makeText(context, "Mencetak pesanan #${order.id}...", android.widget.Toast.LENGTH_SHORT).show()
+                    } else {
+                        android.widget.Toast.makeText(context, "Gagal mencetak pesanan", android.widget.Toast.LENGTH_SHORT).show()
                     }
                 }
+            } else {
+                android.widget.Toast.makeText(context, "Pencetak Bluetooth belum bersambung. Sila sambungkan pencetak.", android.widget.Toast.LENGTH_SHORT).show()
             }
         },
         onLogout = onLogout,
