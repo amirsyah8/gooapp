@@ -1,6 +1,8 @@
 package com.goorder.data.remote.dto
 
+import com.goorder.domain.model.Role
 import com.goorder.domain.model.User
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
 
@@ -30,6 +32,11 @@ data class LoginResultDto(
 @Serializable
 data class LoginResponse(
     val login: LoginResultDto? = null
+)
+
+@Serializable
+data class MeResponse(
+    val me: UserDto? = null
 )
 
 @Serializable
@@ -63,15 +70,25 @@ data class RoleDto(
     val desc: String? = null
 )
 
-fun RoleDto.toDomain() = com.goorder.domain.model.Role(id, type, option, desc)
-fun com.goorder.domain.model.Role.toDto() = RoleDto(id, type, option, desc)
+fun RoleDto.toDomain() = Role(id, type, option, desc)
+fun Role.toDto() = RoleDto(id, type, option, desc)
 
 @Serializable
 data class UserDto(
-    val id: Int? = null,
+    val id: String? = null,
     val name: String? = null,
-    val fname: String? = null,
+    val email: String? = null,
+    @SerialName("role_id") val roleId: Int? = null,
+    @SerialName("role_str") val roleStr: String? = null,
     val phone: String? = null,
+    val type: String? = null,
+    val status: String? = null,
+    val theme: Boolean? = null,
+    val mailvalidation: Boolean? = null,
+    val hasPassword: Boolean? = null,
+
+    // Additional / legacy fields
+    val fname: String? = null,
     val anual: Int? = null,
     val chatId: String? = null,
     val numberExists: Boolean? = null,
@@ -79,14 +96,10 @@ data class UserDto(
     val national: String? = null,
     val country: String? = null,
     val address: String? = null,
-    val email: String? = null,
     val createdAt: String? = null,
     val updatedAt: String? = null,
-    val status: Boolean? = null,
     val profilePicPath: String? = null,
     val profilePicId: String? = null,
-    
-    // Previous fields for backward compatibility mapping
     val avatar: String? = null,
     val bio: String? = null,
     val role: RoleDto? = null,
@@ -94,25 +107,69 @@ data class UserDto(
 )
 
 fun UserDto.toDomain(): User {
+    val effectiveRole = role?.toDomain() ?: if (roleId != null || roleStr != null) {
+        Role(id = roleId, option = roleStr?.lowercase())
+    } else null
+
     return User(
-        id = id, name = name, fname = fname, phone = phone,
-        anual = anual, chatId = chatId, numberExists = numberExists,
-        e164 = e164, national = national, country = country,
-        address = address, email = email, createdAt = createdAt,
-        updatedAt = updatedAt, status = status,
-        profilePicPath = profilePicPath, profilePicId = profilePicId,
-        avatar = avatar, bio = bio, role = role?.toDomain(), language = language
+        id = id,
+        name = name,
+        email = email,
+        roleId = roleId,
+        roleStr = roleStr,
+        phone = phone,
+        type = type,
+        status = status,
+        theme = theme,
+        mailvalidation = mailvalidation,
+        hasPassword = hasPassword,
+        fname = fname,
+        anual = anual,
+        chatId = chatId,
+        numberExists = numberExists,
+        e164 = e164,
+        national = national,
+        country = country,
+        address = address,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+        profilePicPath = profilePicPath,
+        profilePicId = profilePicId,
+        avatar = avatar,
+        bio = bio,
+        role = effectiveRole,
+        language = language
     )
 }
 
 fun User.toDto(): UserDto {
     return UserDto(
-        id = id, name = name, fname = fname, phone = phone,
-        anual = anual, chatId = chatId, numberExists = numberExists,
-        e164 = e164, national = national, country = country,
-        address = address, email = email, createdAt = createdAt,
-        updatedAt = updatedAt, status = status,
-        profilePicPath = profilePicPath, profilePicId = profilePicId,
-        avatar = avatar, bio = bio, role = role?.toDto(), language = language
+        id = id,
+        name = name,
+        email = email,
+        roleId = roleId,
+        roleStr = roleStr,
+        phone = phone,
+        type = type,
+        status = status,
+        theme = theme,
+        mailvalidation = mailvalidation,
+        hasPassword = hasPassword,
+        fname = fname,
+        anual = anual,
+        chatId = chatId,
+        numberExists = numberExists,
+        e164 = e164,
+        national = national,
+        country = country,
+        address = address,
+        createdAt = createdAt,
+        updatedAt = updatedAt,
+        profilePicPath = profilePicPath,
+        profilePicId = profilePicId,
+        avatar = avatar,
+        bio = bio,
+        role = role?.toDto(),
+        language = language
     )
 }

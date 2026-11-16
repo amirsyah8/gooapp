@@ -32,7 +32,10 @@ fun NavGraph(
             }
         }
         is AuthState.Authenticated -> {
-            if (authState.user.role?.option == "printer") {
+            val isPrinter = authState.user.roleStr?.equals("PRINTER", ignoreCase = true) == true
+                    || authState.user.role?.option?.equals("printer", ignoreCase = true) == true
+
+            if (isPrinter) {
                 PrinterScreen(
                     user = authState.user,
                     authViewModel = authViewModel,

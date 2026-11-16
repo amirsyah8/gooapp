@@ -86,18 +86,25 @@ class AuthRemoteDataSource(
 
     suspend fun getCurrentUser(): Result<UserDto> {
         val query = """
-            query WhoAmI {
-              whoAmI {
-                id, name, fname, phone, anual, chatId, numberExists,
-                e164, national, country, address, email, createdAt,
-                updatedAt, status, profilePicPath, profilePicId,
-                role { id, type, option, desc }
+            query Me {
+              me {
+                id
+                name
+                email
+                role_id
+                role_str
+                phone
+                type
+                status
+                theme
+                mailvalidation
+                hasPassword
               }
             }
         """.trimIndent()
 
         return try {
-            val response: GraphQLResponse<WhoAmIResponse> = client.post(BuildConfig.BASE_URL) {
+            val response: GraphQLResponse<MeResponse> = client.post(BuildConfig.BASE_URL) {
                 addAuthHeader()
                 contentType(ContentType.Application.Json)
                 setBody(GraphQLRequest(query))
@@ -106,7 +113,7 @@ class AuthRemoteDataSource(
             if (response.errors != null && response.errors.isNotEmpty()) {
                 Result.failure(Exception(response.errors.first().message))
             } else {
-                val user = response.data?.whoAmI
+                val user = response.data?.me
                 if (user != null) Result.success(user)
                 else Result.failure(Exception("Not authenticated"))
             }

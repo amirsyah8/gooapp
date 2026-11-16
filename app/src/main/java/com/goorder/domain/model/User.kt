@@ -1,10 +1,20 @@
 package com.goorder.domain.model
 
 data class User(
-    val id: Int? = null,
+    val id: String? = null,
     val name: String? = null,
-    val fname: String? = null,
+    val email: String? = null,
+    val roleId: Int? = null,
+    val roleStr: String? = null,
     val phone: String? = null,
+    val type: String? = null,
+    val status: String? = null,
+    val theme: Boolean? = null,
+    val mailvalidation: Boolean? = null,
+    val hasPassword: Boolean? = null,
+
+    // Additional / legacy fields
+    val fname: String? = null,
     val anual: Int? = null,
     val chatId: String? = null,
     val numberExists: Boolean? = null,
@@ -12,15 +22,10 @@ data class User(
     val national: String? = null,
     val country: String? = null,
     val address: String? = null,
-    val email: String? = null,
     val createdAt: String? = null,
     val updatedAt: String? = null,
-    val status: Boolean? = null,
     val profilePicPath: String? = null,
     val profilePicId: String? = null,
-    
-    // Kept from previous for compatibility with existing UI if needed
-    // or you can remove these if you are sure they are no longer used.
     val avatar: String? = null,
     val bio: String? = null,
     val role: Role? = null,

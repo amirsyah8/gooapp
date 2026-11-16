@@ -134,7 +134,7 @@ fun UserSettingsScreen(
                 
                 SettingsItem(
                     label = "Role",
-                    value = user?.role?.option?.replaceFirstChar { it.uppercase() } ?: "User",
+                    value = (user?.roleStr ?: user?.role?.option)?.uppercase() ?: "USER",
                     isEditable = false
                 )
                 
