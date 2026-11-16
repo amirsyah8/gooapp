@@ -17,10 +17,15 @@ class SocketManager {
         .pingInterval(30, TimeUnit.SECONDS)
         .build()
 
+    var isConnected: Boolean = false
+        private set
+
     fun connect(
         token: String,
-        onNotificationReceived: () -> Unit,
-        onPrintQrReceived: (String) -> Unit
+        onNotificationReceived: () -> Unit = {},
+        onPrintQrReceived: (String) -> Unit = {},
+        onOrderUpdated: () -> Unit = {},
+        onConnectionChange: (Boolean) -> Unit = {}
     ) {
         if (webSocket != null) return
 
@@ -40,6 +45,8 @@ class SocketManager {
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 Log.d("SocketManager", "WebSocket Connected Successfully!")
+                isConnected = true
+                onConnectionChange(true)
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -56,6 +63,10 @@ class SocketManager {
                         "user:status" -> {
                             onNotificationReceived()
                         }
+                        "ORDER_UPDATED" -> {
+                            Log.d("SocketManager", "⚡ Pesanan dikemaskini dari WebSocket")
+                            onOrderUpdated()
+                        }
                     }
                 } catch (e: Exception) {
                     Log.e("SocketManager", "Error parsing WS message", e)
@@ -65,11 +76,15 @@ class SocketManager {
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 Log.e("SocketManager", "WebSocket Failure: ${t.message}, Response Code: ${response?.code}")
                 this@SocketManager.webSocket = null
+                isConnected = false
+                onConnectionChange(false)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 Log.d("SocketManager", "WebSocket Closed: $code / $reason")
                 this@SocketManager.webSocket = null
+                isConnected = false
+                onConnectionChange(false)
             }
         })
     }
@@ -78,5 +93,6 @@ class SocketManager {
         Log.d("SocketManager", "Disconnecting WebSocket")
         webSocket?.close(1000, "User logged out")
         webSocket = null
+        isConnected = false
     }
 }

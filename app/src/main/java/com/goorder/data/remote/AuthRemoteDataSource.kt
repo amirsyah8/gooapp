@@ -12,6 +12,7 @@ import io.ktor.client.plugins.cookies.*
 import io.ktor.client.plugins.logging.*
 import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
+import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.json.Json
@@ -184,6 +185,103 @@ class AuthRemoteDataSource(
                 ))
             }.body()
             Result.success(response.uuid)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun refreshToken(): Result<String> {
+        return try {
+            val baseUrl = BuildConfig.BASE_URL.replace("/graphql", "")
+            val response = client.post("$baseUrl/api/refresh-token") {
+                contentType(ContentType.Application.Json)
+            }
+            if (response.status.isSuccess()) {
+                val data: Map<String, String> = response.body()
+                val newToken = data["token"] ?: data["access_token"]
+                if (!newToken.isNullOrBlank()) {
+                    sessionManager.saveToken(newToken)
+                    Result.success(newToken)
+                } else {
+                    Result.failure(Exception("Token kosong"))
+                }
+            } else {
+                Result.failure(Exception("Refresh token gagal: HTTP ${response.status.value}"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getMyOutlets(): Result<List<StaffOutletResponse>> {
+        return try {
+            val baseUrl = BuildConfig.BASE_URL.replace("/graphql", "")
+            val response = client.get("$baseUrl/api/outlet/my-outlets-new") {
+                addAuthHeader()
+            }
+            if (response.status == HttpStatusCode.Unauthorized) {
+                val refreshResult = refreshToken()
+                if (refreshResult.isSuccess) {
+                    val retryResponse = client.get("$baseUrl/api/outlet/my-outlets-new") {
+                        addAuthHeader()
+                    }
+                    if (retryResponse.status.isSuccess()) {
+                        return Result.success(retryResponse.body())
+                    }
+                }
+                return Result.failure(Exception("Sesi log masuk telah luput."))
+            }
+            if (!response.status.isSuccess()) {
+                return Result.failure(Exception("Ralat memuat senarai cawangan: HTTP ${response.status.value}"))
+            }
+            val outlets: List<StaffOutletResponse> = response.body()
+            Result.success(outlets)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun getOrdersByOutletId(outletId: Long): Result<List<OrderSessionDto>> {
+        return try {
+            val baseUrl = BuildConfig.BASE_URL.replace("/graphql", "")
+            val response = client.get("$baseUrl/api/table/get-orders-by-outlet-id/$outletId") {
+                addAuthHeader()
+            }
+            if (response.status == HttpStatusCode.Unauthorized) {
+                val refreshResult = refreshToken()
+                if (refreshResult.isSuccess) {
+                    val retryResponse = client.get("$baseUrl/api/table/get-orders-by-outlet-id/$outletId") {
+                        addAuthHeader()
+                    }
+                    if (retryResponse.status.isSuccess()) {
+                        return Result.success(retryResponse.body())
+                    }
+                }
+                return Result.failure(Exception("Sesi log masuk telah luput. Sila log masuk semula."))
+            }
+            if (!response.status.isSuccess()) {
+                return Result.failure(Exception("Ralat memuat pesanan: HTTP ${response.status.value}"))
+            }
+            val orders: List<OrderSessionDto> = response.body()
+            Result.success(orders)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateOrderStatus(orderId: Long, status: String): Result<Boolean> {
+        return try {
+            val baseUrl = BuildConfig.BASE_URL.replace("/graphql", "")
+            val response = client.patch("$baseUrl/api/table/update-order-status") {
+                addAuthHeader()
+                contentType(ContentType.Application.Json)
+                setBody(UpdateOrderStatusRequest(orderId = orderId, status = status))
+            }
+            if (response.status.isSuccess()) {
+                Result.success(true)
+            } else {
+                Result.failure(Exception("Gagal mengemaskini status: HTTP ${response.status.value}"))
+            }
         } catch (e: Exception) {
             Result.failure(e)
         }

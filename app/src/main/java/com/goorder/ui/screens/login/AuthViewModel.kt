@@ -1,6 +1,7 @@
 package com.goorder.ui.screens.login
 
 import android.app.Application
+import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -10,6 +11,7 @@ import com.goorder.data.local.SessionManager
 import com.goorder.data.remote.AuthRemoteDataSource
 import com.goorder.data.remote.MqttManager
 import com.goorder.data.remote.SocketManager
+import com.goorder.data.remote.dto.*
 import com.goorder.data.repository.AuthRepositoryImpl
 import com.goorder.domain.model.PrintRequest
 import com.goorder.domain.model.User
@@ -18,6 +20,7 @@ import com.goorder.domain.usecase.LoginUseCase
 import com.goorder.domain.usecase.LogoutUseCase
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 sealed class AuthState {
     data object Loading : AuthState()
@@ -41,10 +44,22 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     var authState by mutableStateOf<AuthState>(AuthState.Loading)
         private set
 
+    var currentOutlet by mutableStateOf<OutletDto?>(null)
+        private set
+
+    var orders by mutableStateOf<List<OrderSessionDto>>(emptyList())
+        private set
+
     var printRequests by mutableStateOf<List<PrintRequest>>(emptyList())
         private set
         
     var isAutoPrintEnabled by mutableStateOf(false)
+        private set
+
+    var isRefreshingOrders by mutableStateOf(false)
+        private set
+
+    var isSocketConnected by mutableStateOf(false)
         private set
 
     init {
@@ -67,6 +82,12 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                             onPrintQrReceived = { data ->
                                 val newRequest = PrintRequest(data = data)
                                 printRequests = printRequests + newRequest
+                            },
+                            onOrderUpdated = {
+                                fetchOrdersFromApi()
+                            },
+                            onConnectionChange = { connected ->
+                                isSocketConnected = connected
                             }
                         )
                     }
@@ -78,12 +99,18 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                             printRequests = printRequests + newRequest
                         }
                     )
+
+                    // Muat turun cawangan pengguna & seterusnya pesanan dari outlet
+                    fetchCurrentOutletAndOrders()
                 } else {
                     authState = AuthState.Unauthenticated
                     // Disconnect socket & MQTT when not authenticated
                     socketManager.disconnect()
                     mqttManager.disconnect()
+                    orders = emptyList()
                     printRequests = emptyList()
+                    currentOutlet = null
+                    isSocketConnected = false
                 }
             }
         }
@@ -105,6 +132,99 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     fun markAsPrinted(requestId: String) {
         printRequests = printRequests.map {
             if (it.id == requestId) it.copy(isPrinted = true) else it
+        }
+    }
+
+    fun fetchCurrentOutletAndOrders() {
+        viewModelScope.launch {
+            isRefreshingOrders = true
+            remoteDataSource.getMyOutlets()
+                .onSuccess { staffList ->
+                    val mainStaff = staffList.find { it.main } ?: staffList.firstOrNull()
+                    val outlet = mainStaff?.outlet
+                    if (outlet?.id != null) {
+                        currentOutlet = outlet
+                        sessionManager.saveCurrentOutlet(outlet.id, outlet.name ?: "")
+                        fetchOrdersFromApi(outlet.id)
+                    } else {
+                        val savedId = sessionManager.getSavedOutletId()
+                        val savedName = sessionManager.getSavedOutletName()
+                        if (savedId != null) {
+                            currentOutlet = OutletDto(id = savedId, name = savedName)
+                            fetchOrdersFromApi(savedId)
+                        }
+                    }
+                }
+                .onFailure { error ->
+                    Log.e("AuthViewModel", "Failed to fetch user outlets", error)
+                    val savedId = sessionManager.getSavedOutletId()
+                    val savedName = sessionManager.getSavedOutletName()
+                    if (savedId != null) {
+                        currentOutlet = OutletDto(id = savedId, name = savedName)
+                        fetchOrdersFromApi(savedId)
+                    }
+                }
+            isRefreshingOrders = false
+        }
+    }
+
+    fun fetchOrdersFromApi(targetOutletId: Long? = null) {
+        viewModelScope.launch {
+            val outletId = targetOutletId
+                ?: currentOutlet?.id
+                ?: sessionManager.getSavedOutletId()
+
+            if (outletId == null) {
+                fetchCurrentOutletAndOrders()
+                return@launch
+            }
+
+            isRefreshingOrders = true
+
+            remoteDataSource.getOrdersByOutletId(outletId)
+                .onSuccess { orderDtos ->
+                    orders = orderDtos
+
+                    val apiRequests = orderDtos.map { dto ->
+                        PrintRequest(
+                            id = dto.id?.toString() ?: UUID.randomUUID().toString(),
+                            data = dto.toPrintText(),
+                            isPrinted = dto.status?.equals("SERVED", ignoreCase = true) == true ||
+                                        dto.status?.equals("COMPLETED", ignoreCase = true) == true
+                        )
+                    }
+
+                    val existingMap = printRequests.associateBy { it.id }
+                    val mergedRequests = apiRequests.map { apiReq ->
+                        existingMap[apiReq.id] ?: apiReq
+                    }
+                    val newUniqueLocal = printRequests.filter { localReq ->
+                        mergedRequests.none { it.id == localReq.id }
+                    }
+
+                    printRequests = mergedRequests + newUniqueLocal
+                }
+                .onFailure { error ->
+                    Log.e("AuthViewModel", "Failed to fetch orders by outlet ID: $outletId", error)
+                }
+
+            isRefreshingOrders = false
+        }
+    }
+
+    fun updateOrderStatus(orderId: Long, nextStatus: String) {
+        viewModelScope.launch {
+            val oldOrders = orders
+            orders = orders.map { if (it.id == orderId) it.copy(status = nextStatus) else it }
+
+            remoteDataSource.updateOrderStatus(orderId, nextStatus)
+                .onSuccess {
+                    fetchOrdersFromApi()
+                }
+                .onFailure { error ->
+                    Log.e("AuthViewModel", "Failed to update order status", error)
+                    orders = oldOrders
+                }
         }
     }
 

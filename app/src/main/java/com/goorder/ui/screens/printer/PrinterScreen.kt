@@ -2,29 +2,37 @@ package com.goorder.ui.screens.printer
 
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.padding
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.goorder.domain.model.PrintRequest
+import com.goorder.data.remote.dto.OrderSessionDto
+import com.goorder.data.remote.dto.OutletDto
+import com.goorder.data.remote.dto.toPrintText
 import com.goorder.domain.model.User
 import com.goorder.ui.screens.dashboard.DashboardScreen
 import com.goorder.ui.screens.login.AuthViewModel
 import com.goorder.ui.screens.settings.UserSettingsScreen
 import com.goorder.ui.screens.settings.UserSettingsViewModel
-import com.goorder.ui.theme.LoginTheme
 import com.goorder.ui.theme.SuccessGreen
 import kotlinx.coroutines.launch
 
@@ -60,7 +68,7 @@ fun PrinterScreen(
         }
     }
 
-    // Optional: minimize app if at dashboard
+    // Minimize app if at dashboard
     BackHandler(enabled = !isSettingsOpen && !isPrinterOpen) {
         activity?.moveTaskToBack(true)
     }
@@ -83,7 +91,12 @@ fun PrinterScreen(
         isSettingsOpen = isSettingsOpen,
         isPrinterOpen = isPrinterOpen,
         isConnected = printerViewModel.isConnected,
+        isSocketConnected = authViewModel.isSocketConnected,
         isAutoPrintEnabled = authViewModel.isAutoPrintEnabled,
+        isRefreshing = authViewModel.isRefreshingOrders,
+        currentOutlet = authViewModel.currentOutlet,
+        orders = authViewModel.orders,
+        onRefreshOrders = { authViewModel.fetchOrdersFromApi() },
         onToggleAutoPrint = { authViewModel.toggleAutoPrint(it) },
         onToggleSettings = { 
             isSettingsOpen = it
@@ -93,15 +106,16 @@ fun PrinterScreen(
             isPrinterOpen = it
             if (it) isSettingsOpen = false
         },
-        printRequests = authViewModel.printRequests,
-        onClearRequests = { authViewModel.clearPrintRequests() },
-        onDeleteRequest = { authViewModel.deletePrintRequest(it) },
-        onManualPrint = { request ->
+        onStatusChange = { orderId, newStatus ->
+            authViewModel.updateOrderStatus(orderId, newStatus)
+        },
+        onPrintOrder = { order ->
             if (printerViewModel.isConnected) {
                 scope.launch {
-                    val success = printerViewModel.printText(request.data)
-                    if (success) {
-                        authViewModel.markAsPrinted(request.id)
+                    val printData = order.toPrintText()
+                    val success = printerViewModel.printText(printData)
+                    if (success && order.id != null) {
+                        authViewModel.markAsPrinted(order.id.toString())
                     }
                 }
             }
@@ -125,37 +139,79 @@ fun PrinterContent(
     isSettingsOpen: Boolean,
     isPrinterOpen: Boolean,
     isConnected: Boolean,
+    isSocketConnected: Boolean,
     isAutoPrintEnabled: Boolean,
+    isRefreshing: Boolean = false,
+    currentOutlet: OutletDto?,
+    orders: List<OrderSessionDto>,
+    onRefreshOrders: () -> Unit = {},
     onToggleAutoPrint: (Boolean) -> Unit,
     onToggleSettings: (Boolean) -> Unit,
     onTogglePrinter: (Boolean) -> Unit,
-    printRequests: List<PrintRequest>,
-    onClearRequests: () -> Unit,
-    onDeleteRequest: (String) -> Unit,
-    onManualPrint: (PrintRequest) -> Unit,
+    onStatusChange: (Long, String) -> Unit,
+    onPrintOrder: (OrderSessionDto) -> Unit,
     onLogout: () -> Unit,
     settingsScreen: @Composable () -> Unit,
     printerScreen: @Composable () -> Unit
 ) {
+    val infiniteTransition = rememberInfiniteTransition(label = "spin")
+    val spinAngle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "spinAngle"
+    )
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     if (isSettingsOpen) {
-                        Text("User Settings")
+                        Text("Tetapan Pengguna", fontWeight = FontWeight.Bold)
                     } else if (isPrinterOpen) {
-                        Text("Printer Bluetooth")
+                        Text("Sambungan Pencetak", fontWeight = FontWeight.Bold)
                     } else {
-                        Text(
-                            "ICONFACADE",
-                            color = Color(0xFF1877F2),
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.ReceiptLong,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                            Column(modifier = Modifier.padding(start = 2.dp)) {
+                                Text(
+                                    text = "Pesanan",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1
+                                )
+                                Text(
+                                    text = currentOutlet?.name ?: "GooOrder Live Sync",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                    maxLines = 1
+                                )
+                            }
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.Transparent,
+                    containerColor = MaterialTheme.colorScheme.surface,
                     titleContentColor = MaterialTheme.colorScheme.onSurface,
                 ),
                 navigationIcon = {
@@ -166,49 +222,83 @@ fun PrinterContent(
                         }) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Back"
+                                contentDescription = "Kembali"
                             )
                         }
                     }
                 },
                 actions = {
                     if (!isSettingsOpen && !isPrinterOpen) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            // Live Badge Pill matching goreact
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = if (isSocketConnected) SuccessGreen.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(if (isSocketConnected) SuccessGreen else MaterialTheme.colorScheme.onSurfaceVariant)
+                                    )
+                                    Text(
+                                        text = if (isSocketConnected) "Live" else "Jeda",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSocketConnected) SuccessGreen else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            IconButton(
+                                onClick = onRefreshOrders,
+                                enabled = !isRefreshing
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Segar Pesanan",
+                                    tint = if (isRefreshing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = if (isRefreshing) Modifier.rotate(spinAngle) else Modifier
+                                )
+                            }
+
                             Switch(
                                 checked = isAutoPrintEnabled,
                                 onCheckedChange = onToggleAutoPrint,
-                                modifier = Modifier.scale(0.7f) // Kecilkan sedikit toggle
+                                modifier = Modifier.scale(0.65f)
                             )
+
                             IconButton(onClick = { onTogglePrinter(true) }) {
                                 Icon(
                                     imageVector = Icons.Default.Print,
                                     contentDescription = "Printer Settings",
-                                    tint = if (isConnected) SuccessGreen else LocalContentColor.current
+                                    tint = if (isConnected) SuccessGreen else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+
+                            IconButton(onClick = { onToggleSettings(true) }) {
+                                Icon(
+                                    imageVector = Icons.Default.Person,
+                                    contentDescription = "User Settings",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
                     }
                 }
             )
-        },
-        floatingActionButton = {
-            if (!isSettingsOpen && !isPrinterOpen) {
-                FloatingActionButton(
-                    onClick = { onToggleSettings(true) },
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Person,
-                        contentDescription = "User Settings"
-                    )
-                }
-            }
         }
     ) { paddingValues ->
         Surface(
-            modifier = Modifier
-                .padding(paddingValues)
+            modifier = Modifier.padding(paddingValues)
         ) {
             if (isSettingsOpen) {
                 settingsScreen()
@@ -216,62 +306,13 @@ fun PrinterContent(
                 printerScreen()
             } else {
                 DashboardScreen(
-                    printRequests = printRequests,
-                    onClearRequests = onClearRequests,
-                    onDeleteRequest = onDeleteRequest,
-                    onManualPrint = onManualPrint,
-                    onLogout = onLogout
+                    orders = orders,
+                    isConnected = isConnected,
+                    onStatusChange = onStatusChange,
+                    onPrintOrder = onPrintOrder,
+                    onRefresh = onRefreshOrders
                 )
             }
         }
-    }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun PrinterScreenPreview() {
-    LoginTheme {
-        PrinterContent(
-            isSettingsOpen = false,
-            isPrinterOpen = false,
-            isConnected = false,
-            isAutoPrintEnabled = false,
-            onToggleAutoPrint = {},
-            onToggleSettings = {},
-            onTogglePrinter = {},
-            printRequests = listOf(PrintRequest(data = "Request 1")),
-            onClearRequests = {},
-            onDeleteRequest = {},
-            onManualPrint = {},
-            onLogout = {},
-            settingsScreen = {},
-            printerScreen = {}
-        )
-    }
-}
-
-
-@Preview(showBackground = true)
-@Composable
-fun PrinterScreenPrinterPreview() {
-    LoginTheme {
-        PrinterContent(
-            isSettingsOpen = false,
-            isPrinterOpen = true,
-            isConnected = true,
-            isAutoPrintEnabled = false,
-            onToggleAutoPrint = {},
-            onToggleSettings = {},
-            onTogglePrinter = {},
-            printRequests = listOf(PrintRequest(data = "Request 1")),
-            onClearRequests = {},
-            onDeleteRequest = {},
-            onManualPrint = {},
-            onLogout = {},
-            settingsScreen = {},
-            printerScreen = {
-                PrinterConnectionScreen()
-            }
-        )
     }
 }
