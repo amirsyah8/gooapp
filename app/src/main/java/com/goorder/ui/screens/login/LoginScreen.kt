@@ -27,6 +27,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.goorder.BuildConfig
 import com.goorder.R
 import com.goorder.ui.theme.LoginTheme
 
@@ -34,8 +35,8 @@ import com.goorder.ui.theme.LoginTheme
 fun LoginScreen(
     authViewModel: AuthViewModel
 ) {
-    var email by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
+    var email by remember { mutableStateOf(BuildConfig.DUMMY_EMAIL) }
+    var password by remember { mutableStateOf(BuildConfig.DUMMY_PASSWORD) }
     var passwordVisible by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }

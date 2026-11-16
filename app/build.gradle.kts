@@ -15,6 +15,11 @@ android {
         versionCode = 1
         versionName = "1.0"
 
+        val dummyEmail = providers.environmentVariable("DUMMY_EMAIL").orNull ?: "pdapur@goorder.com"
+        val dummyPassword = providers.environmentVariable("DUMMY_PASSWORD").orNull ?: "123456"
+        buildConfigField("String", "DUMMY_EMAIL", "\"$dummyEmail\"")
+        buildConfigField("String", "DUMMY_PASSWORD", "\"$dummyPassword\"")
+
         buildConfigField("String", "BASE_URL", "\"http://192.168.0.153:8080/graphql\"")
         buildConfigField("String", "BASE_API", "\"ws://192.168.0.153:4001/ws\"")
         buildConfigField("String", "MQTT_BROKER", "\"tcp://192.168.0.153:1883\"")
@@ -27,6 +32,8 @@ android {
 
     buildTypes {
         release {
+            buildConfigField("String", "DUMMY_EMAIL", "\"\"")
+            buildConfigField("String", "DUMMY_PASSWORD", "\"\"")
             optimization {
                 enable = false
             }
