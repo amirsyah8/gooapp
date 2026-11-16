@@ -17,6 +17,7 @@ android {
 
         buildConfigField("String", "BASE_URL", "\"http://192.168.0.153:8080/graphql\"")
         buildConfigField("String", "BASE_API", "\"ws://192.168.0.153:4001/ws\"")
+        buildConfigField("String", "MQTT_BROKER", "\"tcp://192.168.0.153:1883\"")
 //        buildConfigField("String", "BASE_URL", "\"https://apis.iconfacade.com.my/graphql\"")
 //        buildConfigField("String", "BASE_API", "\"https://apis.iconfacade.com.my\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -66,6 +67,9 @@ dependencies {
 
     // Coil
     implementation(libs.coil.compose)
+
+    // MQTT Paho Client
+    implementation(libs.paho.mqttv3)
 
     // Socket.io
     implementation(libs.socket.io.client)

@@ -8,6 +8,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.goorder.data.local.SessionManager
 import com.goorder.data.remote.AuthRemoteDataSource
+import com.goorder.data.remote.MqttManager
 import com.goorder.data.remote.SocketManager
 import com.goorder.data.repository.AuthRepositoryImpl
 import com.goorder.domain.model.PrintRequest
@@ -31,6 +32,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     private val sessionManager = SessionManager(application)
     private val repository = AuthRepositoryImpl(remoteDataSource, sessionManager)
     private val socketManager = SocketManager()
+    private val mqttManager = MqttManager()
     
     private val loginUseCase = LoginUseCase(repository)
     private val logoutUseCase = LogoutUseCase(repository)
@@ -68,10 +70,19 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                             }
                         )
                     }
+
+                    // Sambungkan ke MQTT Broker untuk mendengar pesanan dari Go backend pada topik pos/order/print
+                    mqttManager.connect(
+                        onPrintOrderReceived = { payload ->
+                            val newRequest = PrintRequest(data = payload)
+                            printRequests = printRequests + newRequest
+                        }
+                    )
                 } else {
                     authState = AuthState.Unauthenticated
-                    // Disconnect socket when not authenticated
+                    // Disconnect socket & MQTT when not authenticated
                     socketManager.disconnect()
+                    mqttManager.disconnect()
                     printRequests = emptyList()
                 }
             }
