@@ -15,6 +15,8 @@ class MqttManager {
     private val topicToSubscribe = "pos/order/print"
 
     fun connect(
+        username: String? = null,
+        password: String? = null,
         onPrintOrderReceived: (String) -> Unit
     ) {
         if (mqttClient?.isConnected == true) return
@@ -32,6 +34,16 @@ class MqttManager {
                 isCleanSession = true
                 connectionTimeout = 10
                 keepAliveInterval = 30
+
+                val finalUsername = if (!username.isNullOrBlank()) username else BuildConfig.MQTT_USERNAME
+                val finalPassword = if (!password.isNullOrBlank()) password else BuildConfig.MQTT_PASSWORD
+
+                if (finalUsername.isNotBlank()) {
+                    userName = finalUsername
+                }
+                if (finalPassword.isNotBlank()) {
+                    this.password = finalPassword.toCharArray()
+                }
             }
 
             mqttClient?.setCallback(object : MqttCallbackExtended {
