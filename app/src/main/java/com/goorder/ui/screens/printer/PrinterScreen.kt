@@ -93,12 +93,10 @@ fun PrinterScreen(
         isPrinterOpen = isPrinterOpen,
         isConnected = printerViewModel.isConnected,
         isSocketConnected = authViewModel.isSocketConnected,
-        isAutoPrintEnabled = authViewModel.isAutoPrintEnabled,
         isRefreshing = authViewModel.isRefreshingOrders,
         currentOutlet = authViewModel.currentOutlet,
         orders = authViewModel.orders,
         onRefreshOrders = { authViewModel.fetchOrdersFromApi() },
-        onToggleAutoPrint = { authViewModel.toggleAutoPrint(it) },
         onToggleSettings = { 
             isSettingsOpen = it
             if (it) isPrinterOpen = false
@@ -134,7 +132,11 @@ fun PrinterScreen(
             )
         },
         printerScreen = {
-            PrinterConnectionScreen(viewModel = printerViewModel)
+            PrinterConnectionScreen(
+                viewModel = printerViewModel,
+                isAutoPrintEnabled = authViewModel.isAutoPrintEnabled,
+                onToggleAutoPrint = { authViewModel.toggleAutoPrint(it) }
+            )
         }
     )
 }
@@ -146,12 +148,10 @@ fun PrinterContent(
     isPrinterOpen: Boolean,
     isConnected: Boolean,
     isSocketConnected: Boolean,
-    isAutoPrintEnabled: Boolean,
     isRefreshing: Boolean = false,
     currentOutlet: OutletDto?,
     orders: List<OrderSessionDto>,
     onRefreshOrders: () -> Unit = {},
-    onToggleAutoPrint: (Boolean) -> Unit,
     onToggleSettings: (Boolean) -> Unit,
     onTogglePrinter: (Boolean) -> Unit,
     onStatusChange: (Long, String) -> Unit,
@@ -302,12 +302,6 @@ fun PrinterContent(
                                     modifier = if (isRefreshing) Modifier.rotate(spinAngle) else Modifier
                                 )
                             }
-
-                            Switch(
-                                checked = isAutoPrintEnabled,
-                                onCheckedChange = onToggleAutoPrint,
-                                modifier = Modifier.scale(0.65f)
-                            )
 
                             IconButton(onClick = { onTogglePrinter(true) }) {
                                 Icon(

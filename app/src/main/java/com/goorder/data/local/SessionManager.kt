@@ -27,6 +27,7 @@ class SessionManager(private val context: Context) {
     private val PRINTER_MAC_KEY = stringPreferencesKey("saved_printer_mac")
     private val PRINTER_NAME_KEY = stringPreferencesKey("saved_printer_name")
     private val AUTO_PRINT_KEY = booleanPreferencesKey("auto_print_enabled")
+    private val AUTO_CUT_KEY = booleanPreferencesKey("auto_cut_enabled")
 
     val userData: Flow<User?> = context.dataStore.data.map { preferences ->
         val userJson = preferences[USER_KEY]
@@ -63,6 +64,10 @@ class SessionManager(private val context: Context) {
 
     val autoPrintData: Flow<Boolean> = context.dataStore.data.map { preferences ->
         preferences[AUTO_PRINT_KEY] ?: false
+    }
+
+    val autoCutData: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[AUTO_CUT_KEY] ?: false
     }
 
     suspend fun getToken(): String? {
@@ -122,6 +127,16 @@ class SessionManager(private val context: Context) {
         return autoPrintData.firstOrNull() ?: false
     }
 
+    suspend fun saveAutoCut(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[AUTO_CUT_KEY] = enabled
+        }
+    }
+
+    suspend fun getAutoCutEnabled(): Boolean {
+        return autoCutData.firstOrNull() ?: false
+    }
+
     suspend fun clearSession() {
         context.dataStore.edit { preferences ->
             preferences.remove(USER_KEY)
@@ -131,6 +146,7 @@ class SessionManager(private val context: Context) {
             preferences.remove(PRINTER_MAC_KEY)
             preferences.remove(PRINTER_NAME_KEY)
             preferences.remove(AUTO_PRINT_KEY)
+            preferences.remove(AUTO_CUT_KEY)
         }
     }
 }

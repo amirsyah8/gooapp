@@ -400,12 +400,16 @@ class BluetoothPrinterService : Service() {
                     val normalizedText = text.lines().joinToString("\r\n")
                     outputStream.write(normalizedText.toByteArray(Charset.forName("GBK")))
 
-                    // 4. Feed kertas 4 baris supaya boleh dicarik dengan mudah (ESC d 4 dan \r\n)
+                    // 4. Feed kertas 4 baris supaya ada jarak yang cukup untuk dicarik atau dipotong (ESC d 4 dan \r\n)
                     outputStream.write("\r\n\r\n".toByteArray(Charset.forName("GBK")))
                     outputStream.write(byteArrayOf(0x1B, 0x64, 0x04))
 
-                    // Nota: JANGAN hantar 'GS V 66 0' kerana printer 58mm (seperti AN581) tiada pemotong automatik (auto-cutter).
-                    // Perintah pemotong pada printer tanpa pemotong boleh menyebabkan buffer tersekat (hang).
+                    // 5. Potong kertas secara automatik jika diaktifkan dalam tetapan pencetak
+                    val isAutoCutEnabled = sessionManager.getAutoCutEnabled()
+                    if (isAutoCutEnabled) {
+                        Log.d("BluetoothPrinterService", "Menghantar arahan pemotong kertas automatik (GS V 1)...")
+                        outputStream.write(byteArrayOf(0x1D, 0x56, 0x01))
+                    }
 
                     outputStream.flush()
                     Log.i("BluetoothPrinterService", "Berjaya mencetak data ke pencetak Bluetooth!")

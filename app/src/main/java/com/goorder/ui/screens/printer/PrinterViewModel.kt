@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.goorder.data.local.SessionManager
 import com.goorder.service.BluetoothPrinterService
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -20,6 +21,7 @@ class PrinterViewModel : ViewModel() {
 
     @SuppressLint("StaticFieldLeak")
     private var bluetoothService: BluetoothPrinterService? = null
+    private var sessionManager: SessionManager? = null
     private var isBound = false
 
     var isConnected by mutableStateOf(false)
@@ -32,6 +34,9 @@ class PrinterViewModel : ViewModel() {
         private set
 
     var errorMessage by mutableStateOf<String?>(null)
+        private set
+
+    var isAutoCutEnabled by mutableStateOf(false)
         private set
 
     init {
@@ -72,9 +77,27 @@ class PrinterViewModel : ViewModel() {
     }
 
     fun bindService(context: Context) {
+        initSessionManager(context)
         BluetoothPrinterService.startService(context)
         val intent = Intent(context, BluetoothPrinterService::class.java)
         context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+    }
+
+    fun initSessionManager(context: Context) {
+        if (sessionManager == null) {
+            val sm = SessionManager(context.applicationContext)
+            sessionManager = sm
+            viewModelScope.launch {
+                isAutoCutEnabled = sm.getAutoCutEnabled()
+            }
+        }
+    }
+
+    fun toggleAutoCut(enabled: Boolean) {
+        isAutoCutEnabled = enabled
+        viewModelScope.launch {
+            sessionManager?.saveAutoCut(enabled)
+        }
     }
 
     fun unbindService(context: Context) {
