@@ -103,4 +103,31 @@ class PrinterViewModel : ViewModel() {
         val s = bluetoothService ?: BluetoothPrinterService.instance ?: return false
         return s.printText(text)
     }
+
+    fun testPrint(onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            val testText = StringBuilder().apply {
+                append("================================\r\n")
+                append("     GOORDER UJIAN CETAK        \r\n")
+                append("================================\r\n")
+                append("Pencetak: ${connectedDeviceName ?: "Thermal"}\r\n")
+                append("Tarikh  : ${java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())}\r\n")
+                append("Status  : Sambungan Berjaya!\r\n")
+                append("--------------------------------\r\n")
+                append("1x Ujian Resit         RM 10.00\r\n")
+                append("1x Minuman Ujian       RM  5.00\r\n")
+                append("--------------------------------\r\n")
+                append("Jumlah                 RM 15.00\r\n")
+                append("================================\r\n")
+                append("  Terima Kasih - Sedia Digunakan\r\n")
+            }.toString()
+
+            val success = printText(testText)
+            if (success) {
+                onResult(true, "Ujian cetakan berjaya dihantar ke pencetak.")
+            } else {
+                onResult(false, "Gagal mencetak. Sila pastikan pencetak disambungkan.")
+            }
+        }
+    }
 }

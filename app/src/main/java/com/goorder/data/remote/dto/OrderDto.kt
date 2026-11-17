@@ -161,32 +161,32 @@ fun OrderSessionDto.toPrintText(): String {
         ?: if (orderType.equals("takeaway", ignoreCase = true)) "Bungkus / Takeaway" else "Pesanan Meja"
     val waiterName = user?.name ?: "Staf #${userId ?: "-"}"
     val sb = StringBuilder()
-    sb.appendLine("================================")
-    sb.appendLine("       GOORDER PESANAN          ")
-    sb.appendLine("================================")
-    sb.appendLine("Meja    : $tableName")
-    sb.appendLine("No. Pes : #${id ?: "-"}")
-    sb.appendLine("Masa    : ${formatTime()}")
-    sb.appendLine("Pelayan : $waiterName")
-    sb.appendLine("--------------------------------")
+    sb.append("================================\r\n")
+    sb.append("       GOORDER PESANAN          \r\n")
+    sb.append("================================\r\n")
+    sb.append("Meja    : $tableName\r\n")
+    sb.append("No. Pes : #${id ?: "-"}\r\n")
+    sb.append("Masa    : ${formatTime()}\r\n")
+    sb.append("Pelayan : $waiterName\r\n")
+    sb.append("--------------------------------\r\n")
     items?.forEach { item ->
         val itemName = item.menu?.name ?: item.name ?: "Menu #${item.menuId}"
-        sb.appendLine("${item.quantity}x $itemName")
+        sb.append("${item.quantity}x $itemName\r\n")
         item.addOns?.forEach { addon ->
             val addonName = addon.addonMenu?.addOnName ?: "Pilihan #${addon.addonMenuId}"
-            sb.appendLine("   + ${addon.quantity}x $addonName")
+            sb.append("   + ${addon.quantity}x $addonName\r\n")
         }
         if (!item.notes.isNullOrBlank()) {
-            sb.appendLine("   Nota: ${item.notes}")
+            sb.append("   Nota: ${item.notes}\r\n")
         }
         val subtotal = item.calculateSubtotal()
-        sb.appendLine("   Subtotal: RM ${String.format(Locale.US, "%.2f", subtotal)}")
+        sb.append("   Subtotal: RM ${String.format(Locale.US, "%.2f", subtotal)}\r\n")
     }
-    sb.appendLine("--------------------------------")
+    sb.append("--------------------------------\r\n")
     val total = calculateTotal()
     val totalCount = totalItemCount()
-    sb.appendLine("Jumlah: RM ${String.format(Locale.US, "%.2f", total)} ($totalCount item)")
-    sb.appendLine("Status: ${status ?: "PENDING"}")
-    sb.appendLine("================================")
-    return sb.toString().trimEnd()
+    sb.append("Jumlah  : RM ${String.format(Locale.US, "%.2f", total)} ($totalCount item)\r\n")
+    sb.append("Status  : ${status ?: "PENDING"}\r\n")
+    sb.append("================================\r\n")
+    return sb.toString()
 }

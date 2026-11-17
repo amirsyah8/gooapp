@@ -234,10 +234,15 @@ class BluetoothPrinterService : Service() {
         updateNotification("Menyambung ke $name...")
         Log.d("BluetoothPrinterService", "Memulakan sambungan ke $name (${device.address})...")
 
+        // Batalkan watcher lama terlebih dahulu untuk elak perlumbaan status terputus (race condition)
+        watcherJob?.cancel()
+        watcherJob = null
+
         val adapter = getBluetoothAdapter()
         try {
             if (adapter?.isDiscovering == true) {
                 adapter.cancelDiscovery()
+                delay(300)
             }
         } catch (_: Exception) {}
 
@@ -249,42 +254,57 @@ class BluetoothPrinterService : Service() {
         var socket: BluetoothSocket? = null
         var connected = false
 
-        // Percubaan 1: Standard SPP UUID
+        // Percubaan 1: Insecure SPP UUID (Paling serasi untuk printer thermal POS pada Android)
         try {
-            Log.d("BluetoothPrinterService", "Percubaan 1: Standard SPP RFCOMM ke $name...")
-            socket = device.createRfcommSocketToServiceRecord(SPP_UUID)
+            Log.d("BluetoothPrinterService", "Percubaan 1: Insecure SPP RFCOMM ke $name...")
+            socket = device.createInsecureRfcommSocketToServiceRecord(SPP_UUID)
             socket.connect()
             connected = true
         } catch (e1: Exception) {
-            Log.w("BluetoothPrinterService", "Standard SPP gagal (${e1.message}), mencuba Insecure SPP...")
+            Log.w("BluetoothPrinterService", "Insecure SPP gagal (${e1.message}), mencuba Standard SPP...")
             try { socket?.close() } catch (_: Exception) {}
             socket = null
         }
 
-        // Percubaan 2: Insecure SPP UUID
+        // Percubaan 2: Standard SPP UUID
         if (!connected) {
             try {
-                Log.d("BluetoothPrinterService", "Percubaan 2: Insecure SPP RFCOMM ke $name...")
-                socket = device.createInsecureRfcommSocketToServiceRecord(SPP_UUID)
+                Log.d("BluetoothPrinterService", "Percubaan 2: Standard SPP RFCOMM ke $name...")
+                socket = device.createRfcommSocketToServiceRecord(SPP_UUID)
                 socket.connect()
                 connected = true
             } catch (e2: Exception) {
-                Log.w("BluetoothPrinterService", "Insecure SPP gagal (${e2.message}), mencuba Reflection Channel 1...")
+                Log.w("BluetoothPrinterService", "Standard SPP gagal (${e2.message}), mencuba Insecure Reflection Channel 1...")
                 try { socket?.close() } catch (_: Exception) {}
                 socket = null
             }
         }
 
-        // Percubaan 3: Java Reflection ke Channel 1 (Standard printer terma)
+        // Percubaan 3: Insecure Reflection ke Channel 1 (Standard printer terma tanpa PIN)
         if (!connected) {
             try {
-                Log.d("BluetoothPrinterService", "Percubaan 3: Reflection createRfcommSocket(1) ke $name...")
-                val m = device.javaClass.getMethod("createRfcommSocket", Int::class.javaPrimitiveType)
+                Log.d("BluetoothPrinterService", "Percubaan 3: Insecure Reflection createInsecureRfcommSocket(1) ke $name...")
+                val m = device.javaClass.getMethod("createInsecureRfcommSocket", Int::class.javaPrimitiveType)
                 socket = m.invoke(device, 1) as BluetoothSocket
                 socket.connect()
                 connected = true
             } catch (e3: Exception) {
-                Log.e("BluetoothPrinterService", "Semua percubaan sambung ke $name gagal: ${e3.message}")
+                Log.w("BluetoothPrinterService", "Insecure Reflection Channel 1 gagal (${e3.message}), mencuba Reflection Channel 1...")
+                try { socket?.close() } catch (_: Exception) {}
+                socket = null
+            }
+        }
+
+        // Percubaan 4: Java Reflection createRfcommSocket ke Channel 1
+        if (!connected) {
+            try {
+                Log.d("BluetoothPrinterService", "Percubaan 4: Reflection createRfcommSocket(1) ke $name...")
+                val m = device.javaClass.getMethod("createRfcommSocket", Int::class.javaPrimitiveType)
+                socket = m.invoke(device, 1) as BluetoothSocket
+                socket.connect()
+                connected = true
+            } catch (e4: Exception) {
+                Log.e("BluetoothPrinterService", "Semua percubaan sambung ke $name gagal: ${e4.message}")
                 try { socket?.close() } catch (_: Exception) {}
                 socket = null
             }
@@ -369,13 +389,26 @@ class BluetoothPrinterService : Service() {
                 if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
                     printTsplLabelInternal(outputStream, trimmed)
                 } else {
-                    // ESC/POS Thermal Receipt: ESC @ (Initialize)
+                    Log.d("BluetoothPrinterService", "Menghantar pesanan ESC/POS (${text.length} aksara)...")
+                    // 1. Inisialisasi Pencetak: ESC @
                     outputStream.write(byteArrayOf(0x1B, 0x40))
-                    outputStream.write(text.toByteArray(Charset.forName("GBK")))
-                    outputStream.write("\r\n\r\n\r\n".toByteArray(Charset.forName("GBK")))
-                    // GS V 66 0 (Paper feed / cut)
-                    outputStream.write(byteArrayOf(0x1D, 0x56, 0x42, 0x00))
+
+                    // 2. Tetapkan Standard Code Page (PC437 / Lalai): ESC t 0
+                    outputStream.write(byteArrayOf(0x1B, 0x74, 0x00))
+
+                    // 3. Pastikan format setiap baris berakhir dengan \r\n (CR LF) yang standard untuk thermal printer
+                    val normalizedText = text.lines().joinToString("\r\n")
+                    outputStream.write(normalizedText.toByteArray(Charset.forName("GBK")))
+
+                    // 4. Feed kertas 4 baris supaya boleh dicarik dengan mudah (ESC d 4 dan \r\n)
+                    outputStream.write("\r\n\r\n".toByteArray(Charset.forName("GBK")))
+                    outputStream.write(byteArrayOf(0x1B, 0x64, 0x04))
+
+                    // Nota: JANGAN hantar 'GS V 66 0' kerana printer 58mm (seperti AN581) tiada pemotong automatik (auto-cutter).
+                    // Perintah pemotong pada printer tanpa pemotong boleh menyebabkan buffer tersekat (hang).
+
                     outputStream.flush()
+                    Log.i("BluetoothPrinterService", "Berjaya mencetak data ke pencetak Bluetooth!")
                     true
                 }
             } catch (e: Exception) {

@@ -94,6 +94,19 @@ fun PrinterConnectionScreen(
         
         if (viewModel.isConnected) {
             Button(
+                onClick = {
+                    viewModel.testPrint { _, msg ->
+                        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = SuccessGreen),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Cetak Ujian (Test Print)")
+            }
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Button(
                 onClick = { viewModel.disconnect() },
                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                 modifier = Modifier.fillMaxWidth()
