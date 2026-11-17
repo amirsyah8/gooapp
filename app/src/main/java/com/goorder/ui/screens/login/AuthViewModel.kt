@@ -297,6 +297,12 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     fun logout() {
         viewModelScope.launch {
             BluetoothPrinterService.stopService(getApplication())
+            socketManager.disconnect()
+            mqttManager.disconnect()
+            orders = emptyList()
+            printRequests = emptyList()
+            currentOutlet = null
+            isSocketConnected = false
             logoutUseCase()
         }
     }

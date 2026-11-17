@@ -40,6 +40,7 @@ class BluetoothPrinterService : Service() {
 
     private var bluetoothSocket: BluetoothSocket? = null
     private var isRunning = false
+    private var isExplicitlyStopped = false
     private var targetDeviceAddress: String? = null
     private var targetDeviceName: String? = null
 
@@ -84,12 +85,17 @@ class BluetoothPrinterService : Service() {
 
         when (action) {
             ACTION_STOP -> {
-                disconnect()
+                Log.d("BluetoothPrinterService", "ACTION_STOP diterima: Mematikan perkhidmatan dan memadam notifikasi...")
+                isExplicitlyStopped = true
+                isRunning = false
+                disconnect(notify = false)
                 stopForeground(STOP_FOREGROUND_REMOVE)
+                cancelNotification()
                 stopSelf()
                 return START_NOT_STICKY
             }
             ACTION_CONNECT_DEVICE -> {
+                isExplicitlyStopped = false
                 val mac = intent.getStringExtra(EXTRA_DEVICE_ADDRESS)
                 if (!mac.isNullOrBlank()) {
                     val adapter = getBluetoothAdapter()
@@ -104,8 +110,22 @@ class BluetoothPrinterService : Service() {
                 }
             }
             ACTION_START, null -> {
-                startForegroundCompat(createNotification("Mencari pencetak Bluetooth..."))
-                autoConnectToPrinter()
+                serviceScope.launch {
+                    val token = sessionManager.getToken()
+                    if (token.isNullOrBlank()) {
+                        Log.d("BluetoothPrinterService", "Tiada sesi aktif (pengguna telah log keluar). Mematikan servis...")
+                        isExplicitlyStopped = true
+                        isRunning = false
+                        disconnect(notify = false)
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                        cancelNotification()
+                        stopSelf()
+                        return@launch
+                    }
+                    isExplicitlyStopped = false
+                    startForegroundCompat(createNotification("Mencari pencetak Bluetooth..."))
+                    autoConnectToPrinter()
+                }
             }
             ACTION_PRINT_TEXT -> {
                 val text = intent.getStringExtra(EXTRA_PRINT_TEXT)
@@ -484,7 +504,7 @@ class BluetoothPrinterService : Service() {
         }
     }
 
-    fun disconnect() {
+    fun disconnect(notify: Boolean = true) {
         try {
             watcherJob?.cancel()
             reconnectJob?.cancel()
@@ -494,12 +514,25 @@ class BluetoothPrinterService : Service() {
         bluetoothSocket = null
         _isConnected.value = false
         _connectedDeviceName.value = null
-        updateNotification("Pencetak diputuskan sambungan.")
+        if (notify && !isExplicitlyStopped && isRunning) {
+            updateNotification("Pencetak diputuskan sambungan.")
+        }
     }
 
     private fun updateNotification(content: String) {
+        if (isExplicitlyStopped || !isRunning) return
         val manager = getSystemService(NOTIFICATION_SERVICE) as? NotificationManager
         manager?.notify(NOTIFICATION_ID, createNotification(content))
+    }
+
+    private fun cancelNotification() {
+        try {
+            val manager = getSystemService(NOTIFICATION_SERVICE) as? NotificationManager
+            manager?.cancel(NOTIFICATION_ID)
+            manager?.cancelAll()
+        } catch (e: Exception) {
+            Log.e("BluetoothPrinterService", "Ralat memadam notifikasi: ${e.message}")
+        }
     }
 
     private fun createNotificationChannel() {
@@ -538,12 +571,35 @@ class BluetoothPrinterService : Service() {
             .build()
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        serviceScope.launch {
+            val token = sessionManager.getToken()
+            if (token.isNullOrBlank()) {
+                Log.d("BluetoothPrinterService", "onTaskRemoved: Sesi tamat (log keluar). Menutup servis dan memadam notifikasi...")
+                isExplicitlyStopped = true
+                isRunning = false
+                disconnect(notify = false)
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                cancelNotification()
+                stopSelf()
+            } else {
+                Log.d("BluetoothPrinterService", "onTaskRemoved: Sesi masih aktif. Perkhidmatan latar belakang kekal berjalan.")
+            }
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        isExplicitlyStopped = true
         isRunning = false
         instance = null
-        disconnect()
+        disconnect(notify = false)
         serviceScope.cancel()
+        try {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            cancelNotification()
+        } catch (_: Exception) {}
     }
 
     companion object {
@@ -595,7 +651,16 @@ class BluetoothPrinterService : Service() {
             val intent = Intent(context, BluetoothPrinterService::class.java).apply {
                 action = ACTION_STOP
             }
-            context.startService(intent)
+            try {
+                context.startService(intent)
+            } catch (e: Exception) {
+                Log.e("BluetoothPrinterService", "Ralat menghantar intent stopService", e)
+            }
+            try {
+                val manager = context.getSystemService(NOTIFICATION_SERVICE) as? NotificationManager
+                manager?.cancel(NOTIFICATION_ID)
+                manager?.cancelAll()
+            } catch (_: Exception) {}
         }
 
         fun connectDevice(context: Context, macAddress: String) {

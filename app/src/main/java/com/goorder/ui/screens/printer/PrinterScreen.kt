@@ -303,14 +303,6 @@ fun PrinterContent(
                                 )
                             }
 
-                            IconButton(onClick = { onTogglePrinter(true) }) {
-                                Icon(
-                                    imageVector = Icons.Default.Print,
-                                    contentDescription = "Printer Settings",
-                                    tint = if (isConnected) SuccessGreen else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-
                             Box {
                                 IconButton(onClick = { isMenuExpanded = true }) {
                                     Icon(
