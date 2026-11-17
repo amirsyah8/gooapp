@@ -74,20 +74,6 @@ fun PrinterScreen(
         activity?.moveTaskToBack(true)
     }
 
-    // Auto-print logic
-    LaunchedEffect(authViewModel.printRequests, authViewModel.isAutoPrintEnabled, printerViewModel.isConnected) {
-        if (authViewModel.isAutoPrintEnabled && printerViewModel.isConnected) {
-            authViewModel.printRequests.forEach { request ->
-                if (!request.isPrinted) {
-                    val success = printerViewModel.printText(request.data)
-                    if (success) {
-                        authViewModel.markAsPrinted(request.id)
-                    }
-                }
-            }
-        }
-    }
-
     PrinterContent(
         isSettingsOpen = isSettingsOpen,
         isPrinterOpen = isPrinterOpen,

@@ -63,6 +63,8 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
     var isSocketConnected by mutableStateOf(false)
         private set
 
+    private var isInitialOrdersLoaded = false
+
     init {
         observeSession()
         syncSession()
@@ -129,6 +131,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                     printRequests = emptyList()
                     currentOutlet = null
                     isSocketConnected = false
+                    isInitialOrdersLoaded = false
                 }
             }
         }
@@ -145,6 +148,10 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
 
     fun toggleAutoPrint(enabled: Boolean) {
         isAutoPrintEnabled = enabled
+        if (enabled) {
+            // Tandakan semua order yang sedia ada sebagai sudah diproses supaya tidak dicetak pukal bila suis dihidupkan
+            printRequests = printRequests.map { it.copy(isPrinted = true) }
+        }
         viewModelScope.launch {
             sessionManager.saveAutoPrint(enabled)
         }
@@ -223,11 +230,15 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                 .onSuccess { orderDtos ->
                     orders = orderDtos
 
+                    val isFirstLoad = !isInitialOrdersLoaded
+                    isInitialOrdersLoaded = true
+
                     val apiRequests = orderDtos.map { dto ->
                         PrintRequest(
                             id = dto.id?.toString() ?: UUID.randomUUID().toString(),
                             data = dto.toPrintText(),
-                            isPrinted = dto.status?.equals("SERVED", ignoreCase = true) == true ||
+                            isPrinted = isFirstLoad ||
+                                        dto.status?.equals("SERVED", ignoreCase = true) == true ||
                                         dto.status?.equals("COMPLETED", ignoreCase = true) == true
                         )
                     }
@@ -240,11 +251,15 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
                         mergedRequests.none { it.id == localReq.id }
                     }
 
-                    val newlyArrivedUnprinted = apiRequests.filter { !it.isPrinted && existingMap[it.id] == null }
+                    val newlyArrivedUnprinted = if (isFirstLoad) {
+                        emptyList()
+                    } else {
+                        apiRequests.filter { !it.isPrinted && existingMap[it.id] == null }
+                    }
 
                     printRequests = mergedRequests + newUniqueLocal
 
-                    // Auto-print order baru yang belum pernah dicetak jika suis auto-print aktif
+                    // Auto-print HANYA order baru yang masuk semasa app sedang berjalan
                     if (newlyArrivedUnprinted.isNotEmpty()) {
                         checkAndAutoPrint(newlyArrivedUnprinted)
                     }
@@ -303,6 +318,7 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
             printRequests = emptyList()
             currentOutlet = null
             isSocketConnected = false
+            isInitialOrdersLoaded = false
             logoutUseCase()
         }
     }
