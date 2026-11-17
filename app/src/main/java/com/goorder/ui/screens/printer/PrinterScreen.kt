@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Print
@@ -170,6 +171,33 @@ fun PrinterContent(
         label = "spinAngle"
     )
 
+    var isMenuExpanded by remember { mutableStateOf(false) }
+    var showLogoutDialog by remember { mutableStateOf(false) }
+
+    if (showLogoutDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogoutDialog = false },
+            title = { Text("Log Keluar", fontWeight = FontWeight.Bold) },
+            text = { Text("Adakah anda pasti mahu log keluar daripada aplikasi?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showLogoutDialog = false
+                        onLogout()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Log Keluar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLogoutDialog = false }) {
+                    Text("Batal")
+                }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -206,7 +234,7 @@ fun PrinterContent(
                                     maxLines = 1
                                 )
                                 Text(
-                                    text = currentOutlet?.name ?: "GooOrder Live Sync",
+                                    text = currentOutlet?.name ?: "Goorder Live Sync",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                     maxLines = 1
@@ -289,12 +317,67 @@ fun PrinterContent(
                                 )
                             }
 
-                            IconButton(onClick = { onToggleSettings(true) }) {
-                                Icon(
-                                    imageVector = Icons.Default.Person,
-                                    contentDescription = "User Settings",
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                            Box {
+                                IconButton(onClick = { isMenuExpanded = true }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Person,
+                                        contentDescription = "User Settings",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                DropdownMenu(
+                                    expanded = isMenuExpanded,
+                                    onDismissRequest = { isMenuExpanded = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Tetapan Pengguna") },
+                                        onClick = {
+                                            isMenuExpanded = false
+                                            onToggleSettings(true)
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Default.Person,
+                                                contentDescription = null
+                                            )
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Tetapan Pencetak") },
+                                        onClick = {
+                                            isMenuExpanded = false
+                                            onTogglePrinter(true)
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = Icons.Default.Print,
+                                                contentDescription = null,
+                                                tint = if (isConnected) SuccessGreen else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    )
+                                    HorizontalDivider()
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                text = "Log Keluar",
+                                                color = MaterialTheme.colorScheme.error
+                                            )
+                                        },
+                                        onClick = {
+                                            isMenuExpanded = false
+                                            showLogoutDialog = true
+                                        },
+                                        leadingIcon = {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Filled.Logout,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.error
+                                            )
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
