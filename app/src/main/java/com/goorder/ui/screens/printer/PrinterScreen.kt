@@ -20,7 +20,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -31,7 +30,7 @@ import com.goorder.data.remote.dto.OutletDto
 import com.goorder.data.remote.dto.toPrintText
 import com.goorder.domain.model.User
 import com.goorder.ui.screens.dashboard.DashboardScreen
-import com.goorder.ui.screens.login.AuthViewModel
+import com.goorder.ui.screens.dashboard.OrderViewModel
 import com.goorder.ui.screens.settings.UserSettingsScreen
 import com.goorder.ui.screens.settings.UserSettingsViewModel
 import com.goorder.ui.theme.SuccessGreen
@@ -41,22 +40,57 @@ import kotlinx.coroutines.launch
 @Composable
 fun PrinterScreen(
     user: User?,
-    authViewModel: AuthViewModel,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onSyncSession: () -> Unit
 ) {
-    val settingsViewModel: UserSettingsViewModel = viewModel()
+    // ── ViewModel: setiap satu ada tanggungjawab tersendiri ──
+    val orderViewModel: OrderViewModel = viewModel()
+    val printQueueViewModel: PrintQueueViewModel = viewModel()
     val printerViewModel: PrinterViewModel = viewModel()
+    val settingsViewModel: UserSettingsViewModel = viewModel()
+
     var isSettingsOpen by remember { mutableStateOf(false) }
     var isPrinterOpen by remember { mutableStateOf(false) }
     val activity = LocalActivity.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // Bind to printer service globally in PrinterScreen
+    // ── Wire callbacks antara ViewModels ──
+    LaunchedEffect(Unit) {
+        // Apabila OrderViewModel dapat orders baru dari API, sync ke print queue
+        orderViewModel.onNewOrdersFetched = { orders, isFirstLoad ->
+            printQueueViewModel.syncWithOrders(orders, isFirstLoad)
+        }
+
+        // Apabila WebSocket terima arahan cetak QR, hantar ke print queue
+        orderViewModel.onPrintQrReceived = { data ->
+            printQueueViewModel.addPrintRequest(
+                com.goorder.domain.model.PrintRequest(data = data)
+            )
+        }
+
+        // Apabila WebSocket terima notifikasi, sync session di AuthViewModel
+        orderViewModel.onSyncSession = onSyncSession
+
+        // Mulakan sambungan real-time & muat data
+        orderViewModel.connectSocket()
+        printQueueViewModel.connectMqtt()
+        orderViewModel.fetchCurrentOutletAndOrders()
+    }
+
+    // Bind to printer service
     DisposableEffect(Unit) {
         printerViewModel.bindService(context)
         onDispose {
             printerViewModel.unbindService(context)
+        }
+    }
+
+    // Cleanup bila screen dibuang dari composition (logout / session expired)
+    DisposableEffect(Unit) {
+        onDispose {
+            orderViewModel.cleanup()
+            printQueueViewModel.cleanup()
         }
     }
 
@@ -78,11 +112,11 @@ fun PrinterScreen(
         isSettingsOpen = isSettingsOpen,
         isPrinterOpen = isPrinterOpen,
         isConnected = printerViewModel.isConnected,
-        isSocketConnected = authViewModel.isSocketConnected,
-        isRefreshing = authViewModel.isRefreshingOrders,
-        currentOutlet = authViewModel.currentOutlet,
-        orders = authViewModel.orders,
-        onRefreshOrders = { authViewModel.fetchOrdersFromApi() },
+        isSocketConnected = orderViewModel.isSocketConnected,
+        isRefreshing = orderViewModel.isRefreshingOrders,
+        currentOutlet = orderViewModel.currentOutlet,
+        orders = orderViewModel.orders,
+        onRefreshOrders = { orderViewModel.fetchOrdersFromApi() },
         onToggleSettings = { 
             isSettingsOpen = it
             if (it) isPrinterOpen = false
@@ -92,7 +126,7 @@ fun PrinterScreen(
             if (it) isSettingsOpen = false
         },
         onStatusChange = { orderId, newStatus ->
-            authViewModel.updateOrderStatus(orderId, newStatus)
+            orderViewModel.updateOrderStatus(orderId, newStatus)
         },
         onPrintOrder = { order ->
             if (printerViewModel.isConnected) {
@@ -100,7 +134,7 @@ fun PrinterScreen(
                     val printData = order.toPrintText()
                     val success = printerViewModel.printText(printData)
                     if (success && order.id != null) {
-                        authViewModel.markAsPrinted(order.id.toString())
+                        printQueueViewModel.markAsPrinted(order.id.toString())
                         android.widget.Toast.makeText(context, "Mencetak pesanan #${order.id}...", android.widget.Toast.LENGTH_SHORT).show()
                     } else {
                         android.widget.Toast.makeText(context, "Gagal mencetak pesanan", android.widget.Toast.LENGTH_SHORT).show()
@@ -110,7 +144,11 @@ fun PrinterScreen(
                 android.widget.Toast.makeText(context, "Pencetak Bluetooth belum bersambung. Sila sambungkan pencetak.", android.widget.Toast.LENGTH_SHORT).show()
             }
         },
-        onLogout = onLogout,
+        onLogout = {
+            orderViewModel.cleanup()
+            printQueueViewModel.cleanup()
+            onLogout()
+        },
         settingsScreen = {
             UserSettingsScreen(
                 user = user,
@@ -120,8 +158,8 @@ fun PrinterScreen(
         printerScreen = {
             PrinterConnectionScreen(
                 viewModel = printerViewModel,
-                isAutoPrintEnabled = authViewModel.isAutoPrintEnabled,
-                onToggleAutoPrint = { authViewModel.toggleAutoPrint(it) }
+                isAutoPrintEnabled = printQueueViewModel.isAutoPrintEnabled,
+                onToggleAutoPrint = { printQueueViewModel.toggleAutoPrint(it) }
             )
         }
     )
@@ -252,7 +290,7 @@ fun PrinterContent(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
-                            // Live Badge Pill matching goreact
+                            // Live Badge Pill
                             Surface(
                                 shape = RoundedCornerShape(16.dp),
                                 color = if (isSocketConnected) SuccessGreen.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant

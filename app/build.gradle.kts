@@ -1,7 +1,15 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
+}
+
+// ── Baca credentials dari local.properties (fail ini TIDAK masuk git) ──
+val localProps = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) load(file.inputStream())
 }
 
 android {
@@ -15,18 +23,21 @@ android {
         versionCode = 1
         versionName = "1.0"
 
-        val dummyEmail = providers.environmentVariable("DUMMY_EMAIL").orNull ?: "pdapur@goorder.com"
-        val dummyPassword = providers.environmentVariable("DUMMY_PASSWORD").orNull ?: "123456"
+        // Debug auto-fill: dibaca dari local.properties, BUKAN hardcoded
+        val dummyEmail = providers.environmentVariable("DUMMY_EMAIL").orNull
+            ?: localProps.getProperty("DUMMY_EMAIL", "")
+        val dummyPassword = providers.environmentVariable("DUMMY_PASSWORD").orNull
+            ?: localProps.getProperty("DUMMY_PASSWORD", "")
         buildConfigField("String", "DUMMY_EMAIL", "\"$dummyEmail\"")
         buildConfigField("String", "DUMMY_PASSWORD", "\"$dummyPassword\"")
 
-        buildConfigField("String", "BASE_URL", "\"http://192.168.0.153:8080/graphql\"")
-        buildConfigField("String", "BASE_API", "\"ws://192.168.0.153:4001/ws\"")
-        buildConfigField("String", "MQTT_BROKER", "\"tcp://192.168.0.153:1883\"")
-        buildConfigField("String", "MQTT_USERNAME", "\"admin_mqtt\"")
-        buildConfigField("String", "MQTT_PASSWORD", "\"hajar93\"")
-//        buildConfigField("String", "BASE_URL", "\"https://apis.iconfacade.com.my/graphql\"")
-//        buildConfigField("String", "BASE_API", "\"https://apis.iconfacade.com.my\"")
+        // Backend endpoints: dibaca dari local.properties
+        buildConfigField("String", "BASE_URL", "\"${localProps.getProperty("BASE_URL", "")}\"")
+        buildConfigField("String", "BASE_API", "\"${localProps.getProperty("BASE_API", "")}\"")
+        buildConfigField("String", "MQTT_BROKER", "\"${localProps.getProperty("MQTT_BROKER", "")}\"")
+        buildConfigField("String", "MQTT_USERNAME", "\"${localProps.getProperty("MQTT_USERNAME", "")}\"")
+        buildConfigField("String", "MQTT_PASSWORD", "\"${localProps.getProperty("MQTT_PASSWORD", "")}\"")
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

@@ -38,8 +38,8 @@ fun NavGraph(
             if (isPrinter) {
                 PrinterScreen(
                     user = authState.user,
-                    authViewModel = authViewModel,
-                    onLogout = { authViewModel.logout() }
+                    onLogout = { authViewModel.logout() },
+                    onSyncSession = { authViewModel.syncSession() }
                 )
             } else {
                 UserScreen(
