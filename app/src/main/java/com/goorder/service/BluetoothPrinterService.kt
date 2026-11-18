@@ -20,9 +20,11 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.goorder.MainActivity
 import com.goorder.data.local.SessionManager
+import com.goorder.data.remote.dto.formatMqttOrderToReceipt
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
@@ -407,33 +409,22 @@ class BluetoothPrinterService : Service() {
                 val outputStream = socket.outputStream
                 val trimmed = text.trim()
                 if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
-                    printTsplLabelInternal(outputStream, trimmed)
-                } else {
-                    Log.d("BluetoothPrinterService", "Menghantar pesanan ESC/POS (${text.length} aksara)...")
-                    // 1. Inisialisasi Pencetak: ESC @
-                    outputStream.write(byteArrayOf(0x1B, 0x40))
-
-                    // 2. Tetapkan Standard Code Page (PC437 / Lalai): ESC t 0
-                    outputStream.write(byteArrayOf(0x1B, 0x74, 0x00))
-
-                    // 3. Pastikan format setiap baris berakhir dengan \r\n (CR LF) yang standard untuk thermal printer
-                    val normalizedText = text.lines().joinToString("\r\n")
-                    outputStream.write(normalizedText.toByteArray(Charset.forName("GBK")))
-
-                    // 4. Feed kertas 4 baris supaya ada jarak yang cukup untuk dicarik atau dipotong (ESC d 4 dan \r\n)
-                    outputStream.write("\r\n\r\n".toByteArray(Charset.forName("GBK")))
-                    outputStream.write(byteArrayOf(0x1B, 0x64, 0x04))
-
-                    // 5. Potong kertas secara automatik jika diaktifkan dalam tetapan pencetak
-                    val isAutoCutEnabled = sessionManager.getAutoCutEnabled()
-                    if (isAutoCutEnabled) {
-                        Log.d("BluetoothPrinterService", "Menghantar arahan pemotong kertas automatik (GS V 1)...")
-                        outputStream.write(byteArrayOf(0x1D, 0x56, 0x01))
+                    val json = try { JSONObject(trimmed) } catch (_: Exception) { null }
+                    if (json != null && json.has("variant")) {
+                        printTsplLabelInternal(outputStream, trimmed)
+                    } else {
+                        // Jika JSON pesanan GoOrder dihantar, formatkan sebagai resit dapur mengikut pencetak staf
+                        val userId = sessionManager.userData.firstOrNull()?.id
+                        val formatted = formatMqttOrderToReceipt(trimmed, userId)
+                        if (formatted != null) {
+                            printEscPos(outputStream, formatted)
+                        } else {
+                            Log.d("BluetoothPrinterService", "Pesanan JSON diabaikan: tiada item untuk pencetak staf ID $userId")
+                            true
+                        }
                     }
-
-                    outputStream.flush()
-                    Log.i("BluetoothPrinterService", "Berjaya mencetak data ke pencetak Bluetooth!")
-                    true
+                } else {
+                    printEscPos(outputStream, text)
                 }
             } catch (e: Exception) {
                 Log.e("BluetoothPrinterService", "Ralat semasa mencetak: ${e.message}", e)
@@ -443,6 +434,34 @@ class BluetoothPrinterService : Service() {
                 false
             }
         }
+    }
+
+    private suspend fun printEscPos(outputStream: OutputStream, text: String): Boolean {
+        Log.d("BluetoothPrinterService", "Menghantar pesanan ESC/POS (${text.length} aksara)...")
+        // 1. Inisialisasi Pencetak: ESC @
+        outputStream.write(byteArrayOf(0x1B, 0x40))
+
+        // 2. Tetapkan Standard Code Page (PC437 / Lalai): ESC t 0
+        outputStream.write(byteArrayOf(0x1B, 0x74, 0x00))
+
+        // 3. Pastikan format setiap baris berakhir dengan \r\n (CR LF) yang standard untuk thermal printer
+        val normalizedText = text.lines().joinToString("\r\n")
+        outputStream.write(normalizedText.toByteArray(Charset.forName("GBK")))
+
+        // 4. Feed kertas 4 baris supaya ada jarak yang cukup untuk dicarik atau dipotong (ESC d 4 dan \r\n)
+        outputStream.write("\r\n\r\n".toByteArray(Charset.forName("GBK")))
+        outputStream.write(byteArrayOf(0x1B, 0x64, 0x04))
+
+        // 5. Potong kertas secara automatik jika diaktifkan dalam tetapan pencetak
+        val isAutoCutEnabled = sessionManager.getAutoCutEnabled()
+        if (isAutoCutEnabled) {
+            Log.d("BluetoothPrinterService", "Menghantar arahan pemotong kertas automatik (GS V 1)...")
+            outputStream.write(byteArrayOf(0x1D, 0x56, 0x01))
+        }
+
+        outputStream.flush()
+        Log.i("BluetoothPrinterService", "Berjaya mencetak data ke pencetak Bluetooth!")
+        return true
     }
 
     fun printTsplLabel(jsonData: String): Boolean {

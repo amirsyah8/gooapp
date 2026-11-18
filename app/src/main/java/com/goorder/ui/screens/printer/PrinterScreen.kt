@@ -132,7 +132,12 @@ fun PrinterScreen(
         onPrintOrder = { order ->
             if (printerViewModel.isConnected) {
                 scope.launch {
-                    val printData = order.toPrintText()
+                    val targetUserId = printQueueViewModel.currentUserId ?: user?.id
+                    val printData = order.toPrintText(filterUserId = targetUserId)
+                    if (printData == null) {
+                        android.widget.Toast.makeText(context, "Tiada item pesanan untuk stesen/pencetak ini", android.widget.Toast.LENGTH_SHORT).show()
+                        return@launch
+                    }
                     val success = printerViewModel.printText(printData)
                     if (success && order.id != null) {
                         printQueueViewModel.markAsPrinted(order.id.toString())

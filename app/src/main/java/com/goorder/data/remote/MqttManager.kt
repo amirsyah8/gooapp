@@ -11,6 +11,8 @@ import org.eclipse.paho.client.mqttv3.MqttClient
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions
 import org.eclipse.paho.client.mqttv3.MqttMessage
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence
+import org.json.JSONArray
+import org.json.JSONObject
 import java.util.UUID
 
 class MqttManager {
@@ -67,7 +69,18 @@ class MqttManager {
 
                     override fun messageArrived(topic: String?, message: MqttMessage?) {
                         val payload = message?.payload?.let { String(it) } ?: ""
-                        Log.d("MqttManager", "Mesej MQTT diterima pada topik [$topic]: $payload")
+//                        val trimmed = payload.trim()
+//                        val formattedPayload = try {
+//                            when {
+//                                trimmed.startsWith("{") -> JSONObject(trimmed).toString(2)
+//                                trimmed.startsWith("[") -> JSONArray(trimmed).toString(2)
+//                                else -> payload
+//                            }
+//                        } catch (_: Exception) {
+//                            payload
+//                        }
+                        Log.d("MqttManager", "Mesej MQTT diterima pada topik [$topic]:\n$payload")
+
                         if (topic == topicToSubscribe && payload.isNotBlank()) {
                             onPrintOrderReceived(payload)
                         }

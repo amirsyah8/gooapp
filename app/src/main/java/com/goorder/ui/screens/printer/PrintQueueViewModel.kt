@@ -10,9 +10,11 @@ import androidx.lifecycle.viewModelScope
 import com.goorder.data.local.SessionManager
 import com.goorder.data.remote.MqttManager
 import com.goorder.data.remote.dto.OrderSessionDto
+import com.goorder.data.remote.dto.formatMqttOrderToReceipt
 import com.goorder.data.remote.dto.toPrintText
 import com.goorder.domain.model.PrintRequest
 import com.goorder.service.BluetoothPrinterService
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -38,6 +40,9 @@ class PrintQueueViewModel(application: Application) : AndroidViewModel(applicati
     var savedPrintedIds by mutableStateOf<Set<String>>(emptySet())
         private set
 
+    var currentUserId by mutableStateOf<String?>(null)
+        private set
+
     val printedOrderIds: Set<String>
         get() = savedPrintedIds
 
@@ -54,6 +59,11 @@ class PrintQueueViewModel(application: Application) : AndroidViewModel(applicati
                 savedPrintedIds = it
             }
         }
+        viewModelScope.launch {
+            sessionManager.userData.collect {
+                currentUserId = it?.id
+            }
+        }
     }
 
     // ── MQTT Connection ──
@@ -64,8 +74,18 @@ class PrintQueueViewModel(application: Application) : AndroidViewModel(applicati
 
         mqttManager.connect(
             onPrintOrderReceived = { payload ->
-                val newRequest = PrintRequest(data = payload)
-                addPrintRequest(newRequest)
+                viewModelScope.launch {
+                    val userId = currentUserId ?: sessionManager.userData.firstOrNull()?.id
+                    Log.d("PrintQueueViewModel", "Mesej MQTT diterima. Memeriksa printer untuk user ID: $userId")
+                    val formattedReceipt = formatMqttOrderToReceipt(payload, userId)
+                    if (formattedReceipt != null) {
+                        Log.d("PrintQueueViewModel", "✅ MQTT order sepadan dengan printer staf ID $userId! Menambah ke baris gilir cetak.")
+                        val newRequest = PrintRequest(data = formattedReceipt)
+                        addPrintRequest(newRequest)
+                    } else {
+                        Log.d("PrintQueueViewModel", "ℹ️ MQTT order diabaikan: tiada item untuk printer staf ID $userId.")
+                    }
+                }
             }
         )
     }
@@ -84,43 +104,47 @@ class PrintQueueViewModel(application: Application) : AndroidViewModel(applicati
      * hanya auto-print order baru yang belum pernah dilihat.
      */
     fun syncWithOrders(orderDtos: List<OrderSessionDto>, isFirstLoad: Boolean) {
-        val apiRequests = orderDtos.map { dto ->
-            val orderIdStr = dto.id?.toString() ?: UUID.randomUUID().toString()
-            val alreadyPrinted = savedPrintedIds.contains(orderIdStr) ||
-                    dto.status?.equals("SERVED", ignoreCase = true) == true ||
-                    dto.status?.equals("COMPLETED", ignoreCase = true) == true
+        viewModelScope.launch {
+            val userId = currentUserId ?: sessionManager.userData.firstOrNull()?.id
+            val apiRequests = orderDtos.mapNotNull { dto ->
+                val printData = dto.toPrintText(filterUserId = userId) ?: return@mapNotNull null
+                val orderIdStr = dto.id?.toString() ?: UUID.randomUUID().toString()
+                val alreadyPrinted = savedPrintedIds.contains(orderIdStr) ||
+                        dto.status?.equals("SERVED", ignoreCase = true) == true ||
+                        dto.status?.equals("COMPLETED", ignoreCase = true) == true
 
-            PrintRequest(
-                id = orderIdStr,
-                data = dto.toPrintText(),
-                isPrinted = alreadyPrinted
-            )
-        }
+                PrintRequest(
+                    id = orderIdStr,
+                    data = printData,
+                    isPrinted = alreadyPrinted
+                )
+            }
 
-        val existingMap = printRequests.associateBy { it.id }
+            val existingMap = printRequests.associateBy { it.id }
 
-        // Gabungkan: kekalkan state sedia ada jika request sudah wujud
-        val mergedRequests = apiRequests.map { apiReq ->
-            existingMap[apiReq.id] ?: apiReq
-        }
+            // Gabungkan: kekalkan state sedia ada jika request sudah wujud
+            val mergedRequests = apiRequests.map { apiReq ->
+                existingMap[apiReq.id] ?: apiReq
+            }
 
-        // Kekalkan local-only requests (cth. dari MQTT/WS yang tiada dalam API)
-        val newUniqueLocal = printRequests.filter { localReq ->
-            mergedRequests.none { it.id == localReq.id }
-        }
+            // Kekalkan local-only requests (cth. dari MQTT/WS yang tiada dalam API)
+            val newUniqueLocal = printRequests.filter { localReq ->
+                mergedRequests.none { it.id == localReq.id }
+            }
 
-        // Kenal pasti order baru yang belum pernah dilihat
-        val newlyArrivedUnprinted = if (isFirstLoad) {
-            emptyList()
-        } else {
-            apiRequests.filter { !it.isPrinted && existingMap[it.id] == null }
-        }
+            // Kenal pasti order baru yang belum pernah dilihat
+            val newlyArrivedUnprinted = if (isFirstLoad) {
+                emptyList()
+            } else {
+                apiRequests.filter { !it.isPrinted && existingMap[it.id] == null }
+            }
 
-        printRequests = mergedRequests + newUniqueLocal
+            printRequests = mergedRequests + newUniqueLocal
 
-        // Auto-print HANYA order baru yang masuk semasa app sedang berjalan
-        if (newlyArrivedUnprinted.isNotEmpty()) {
-            checkAndAutoPrint(newlyArrivedUnprinted)
+            // Auto-print HANYA order baru yang masuk semasa app sedang berjalan
+            if (newlyArrivedUnprinted.isNotEmpty()) {
+                checkAndAutoPrint(newlyArrivedUnprinted)
+            }
         }
     }
 
