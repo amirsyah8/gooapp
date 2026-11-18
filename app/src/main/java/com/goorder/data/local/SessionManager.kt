@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.goorder.data.remote.dto.UserDto
 import com.goorder.data.remote.dto.toDomain
@@ -28,6 +29,7 @@ class SessionManager(private val context: Context) {
     private val PRINTER_NAME_KEY = stringPreferencesKey("saved_printer_name")
     private val AUTO_PRINT_KEY = booleanPreferencesKey("auto_print_enabled")
     private val AUTO_CUT_KEY = booleanPreferencesKey("auto_cut_enabled")
+    private val PRINTED_ORDERS_KEY = stringSetPreferencesKey("printed_order_ids")
 
     val userData: Flow<User?> = context.dataStore.data.map { preferences ->
         val userJson = preferences[USER_KEY]
@@ -137,6 +139,21 @@ class SessionManager(private val context: Context) {
         return autoCutData.firstOrNull() ?: false
     }
 
+    val printedOrdersData: Flow<Set<String>> = context.dataStore.data.map { preferences ->
+        preferences[PRINTED_ORDERS_KEY] ?: emptySet()
+    }
+
+    suspend fun getPrintedOrders(): Set<String> {
+        return printedOrdersData.firstOrNull() ?: emptySet()
+    }
+
+    suspend fun savePrintedOrderId(id: String) {
+        context.dataStore.edit { preferences ->
+            val current = preferences[PRINTED_ORDERS_KEY] ?: emptySet()
+            preferences[PRINTED_ORDERS_KEY] = current + id
+        }
+    }
+
     suspend fun clearSession() {
         context.dataStore.edit { preferences ->
             preferences.remove(USER_KEY)
@@ -147,6 +164,7 @@ class SessionManager(private val context: Context) {
             preferences.remove(PRINTER_NAME_KEY)
             preferences.remove(AUTO_PRINT_KEY)
             preferences.remove(AUTO_CUT_KEY)
+            preferences.remove(PRINTED_ORDERS_KEY)
         }
     }
 }

@@ -47,6 +47,7 @@ enum class OrderTab(val label: String) {
 fun DashboardScreen(
     orders: List<OrderSessionDto>,
     isConnected: Boolean,
+    printedOrderIds: Set<String> = emptySet(),
     onStatusChange: (Long, String) -> Unit,
     onPrintOrder: (OrderSessionDto) -> Unit,
     onRefresh: () -> Unit
@@ -94,7 +95,7 @@ fun DashboardScreen(
             if (searchQuery.isBlank()) return@filter true
 
             val q = searchQuery.trim().lowercase()
-            val tableName = order.tableSession?.tableMeja?.name?.lowercase() ?: ""
+            val tableName = order.getDisplayTableName().lowercase()
             val waiterName = order.user?.name?.lowercase() ?: ""
             val hashid = order.hashid?.lowercase() ?: ""
             val orderId = order.id?.toString() ?: ""
@@ -118,72 +119,67 @@ fun DashboardScreen(
     ) {
         Spacer(modifier = Modifier.height(4.dp))
 
-        // ── Quick Stat Cards (Scrollable Horizontal Row) ──
-        LazyRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(vertical = 4.dp)
+        // ── Quick Stat Cards (Full Width Row) ──
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            item {
-                StatFilterChip(
-                    title = "Aktif Dapur",
-                    count = activeCount,
-                    icon = Icons.Default.LocalFireDepartment,
-                    accentColor = Color(0xFFF97316),
-                    isSelected = selectedTab == OrderTab.ACTIVE,
-                    onClick = { selectedTab = OrderTab.ACTIVE }
-                )
-            }
-            item {
-                StatFilterChip(
-                    title = "Menunggu",
-                    count = pendingCount,
-                    icon = Icons.Default.Schedule,
-                    accentColor = Color(0xFFF59E0B),
-                    isSelected = selectedTab == OrderTab.PENDING,
-                    onClick = { selectedTab = OrderTab.PENDING }
-                )
-            }
-            item {
-                StatFilterChip(
-                    title = "Dimasak",
-                    count = cookingCount,
-                    icon = Icons.Default.RestaurantMenu,
-                    accentColor = Color(0xFF3B82F6),
-                    isSelected = selectedTab == OrderTab.COOKING,
-                    onClick = { selectedTab = OrderTab.COOKING }
-                )
-            }
-            item {
-                StatFilterChip(
-                    title = "Siap Kaunter",
-                    count = waitingServeCount,
-                    icon = Icons.Default.NotificationsActive,
-                    accentColor = Color(0xFF06B6D4),
-                    isSelected = selectedTab == OrderTab.WAITING_SERVE,
-                    onClick = { selectedTab = OrderTab.WAITING_SERVE }
-                )
-            }
-            item {
-                StatFilterChip(
-                    title = "Dihidang",
-                    count = servedCount,
-                    icon = Icons.Default.CheckCircle,
-                    accentColor = Color(0xFF10B981),
-                    isSelected = selectedTab == OrderTab.SERVED,
-                    onClick = { selectedTab = OrderTab.SERVED }
-                )
-            }
-            item {
-                StatFilterChip(
-                    title = "Semua",
-                    count = totalCount,
-                    icon = Icons.Default.Layers,
-                    accentColor = MaterialTheme.colorScheme.primary,
-                    isSelected = selectedTab == OrderTab.ALL,
-                    onClick = { selectedTab = OrderTab.ALL }
-                )
-            }
+            StatFilterChip(
+                modifier = Modifier.weight(1f),
+                title = "",
+                count = activeCount,
+                icon = Icons.Default.LocalFireDepartment,
+                accentColor = Color(0xFFF97316),
+                isSelected = selectedTab == OrderTab.ACTIVE,
+                onClick = { selectedTab = OrderTab.ACTIVE }
+            )
+            StatFilterChip(
+                modifier = Modifier.weight(1f),
+                title = "",
+                count = pendingCount,
+                icon = Icons.Default.Schedule,
+                accentColor = Color(0xFFF59E0B),
+                isSelected = selectedTab == OrderTab.PENDING,
+                onClick = { selectedTab = OrderTab.PENDING }
+            )
+            StatFilterChip(
+                modifier = Modifier.weight(1f),
+                title = "",
+                count = cookingCount,
+                icon = Icons.Default.RestaurantMenu,
+                accentColor = Color(0xFF3B82F6),
+                isSelected = selectedTab == OrderTab.COOKING,
+                onClick = { selectedTab = OrderTab.COOKING }
+            )
+            StatFilterChip(
+                modifier = Modifier.weight(1f),
+                title = "",
+                count = waitingServeCount,
+                icon = Icons.Default.NotificationsActive,
+                accentColor = Color(0xFF06B6D4),
+                isSelected = selectedTab == OrderTab.WAITING_SERVE,
+                onClick = { selectedTab = OrderTab.WAITING_SERVE }
+            )
+            StatFilterChip(
+                modifier = Modifier.weight(1f),
+                title = "",
+                count = servedCount,
+                icon = Icons.Default.CheckCircle,
+                accentColor = Color(0xFF10B981),
+                isSelected = selectedTab == OrderTab.SERVED,
+                onClick = { selectedTab = OrderTab.SERVED }
+            )
+            StatFilterChip(
+                modifier = Modifier.weight(1f),
+                title = "",
+                count = totalCount,
+                icon = Icons.Default.Layers,
+                accentColor = MaterialTheme.colorScheme.primary,
+                isSelected = selectedTab == OrderTab.ALL,
+                onClick = { selectedTab = OrderTab.ALL }
+            )
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -262,9 +258,11 @@ fun DashboardScreen(
                 contentPadding = PaddingValues(bottom = 16.dp)
             ) {
                 items(filteredOrders, key = { it.id ?: 0L }) { order ->
+                    val isPrinted = printedOrderIds.contains(order.id?.toString())
                     OrderCard(
                         order = order,
                         isConnected = isConnected,
+                        isPrinted = isPrinted,
                         onCardClick = { selectedOrderForDetail = order },
                         onPrint = { onPrintOrder(order) },
                         onStatusChange = onStatusChange
@@ -352,6 +350,7 @@ fun DashboardScreen(
     selectedOrderForDetail?.let { order ->
         OrderDetailDialog(
             order = order,
+            isPrinted = printedOrderIds.contains(order.id?.toString()),
             onDismiss = { selectedOrderForDetail = null },
             onPrint = { onPrintOrder(order) },
             onStatusChange = { orderId, newStatus ->
@@ -364,7 +363,8 @@ fun DashboardScreen(
 
 @Composable
 fun StatFilterChip(
-    title: String,
+    modifier: Modifier = Modifier,
+    title: String = "",
     count: Int,
     icon: ImageVector,
     accentColor: Color,
@@ -373,41 +373,48 @@ fun StatFilterChip(
 ) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(10.dp),
         color = if (isSelected) accentColor.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface,
         border = BorderStroke(
             width = if (isSelected) 1.5.dp else 1.dp,
             color = if (isSelected) accentColor else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
         ),
-        modifier = Modifier.height(42.dp)
+        modifier = modifier.height(38.dp)
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 2.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.Center
         ) {
             Icon(
                 imageVector = icon,
-                contentDescription = null,
+                contentDescription = title.ifBlank { null },
                 tint = accentColor,
-                modifier = Modifier.size(16.dp)
+                modifier = Modifier.size(15.dp)
             )
-            Text(
-                text = title,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                color = if (isSelected) accentColor else MaterialTheme.colorScheme.onSurface
-            )
+            if (title.isNotBlank()) {
+                Spacer(modifier = Modifier.width(3.dp))
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                    color = if (isSelected) accentColor else MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1
+                )
+            }
+            Spacer(modifier = Modifier.width(3.dp))
             Surface(
                 shape = CircleShape,
                 color = if (isSelected) accentColor else accentColor.copy(alpha = 0.15f)
             ) {
                 Text(
                     text = "$count",
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
                     fontWeight = FontWeight.Bold,
                     color = if (isSelected) Color.White else accentColor,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
                 )
             }
         }
@@ -418,6 +425,7 @@ fun StatFilterChip(
 fun OrderCard(
     order: OrderSessionDto,
     isConnected: Boolean,
+    isPrinted: Boolean = false,
     onCardClick: () -> Unit,
     onPrint: () -> Unit,
     onStatusChange: (Long, String) -> Unit
@@ -434,8 +442,7 @@ fun OrderCard(
     }
 
     val isTakeaway = order.orderType.equals("takeaway", ignoreCase = true)
-    val tableName = order.tableSession?.tableMeja?.name
-        ?: if (isTakeaway) "Bungkus" else "Meja"
+    val tableName = order.getDisplayTableName()
     val waiterName = order.user?.name ?: "Staf #${order.userId ?: "-"}"
     val items = order.items ?: emptyList()
     val previewItems = items.take(3)
@@ -560,16 +567,49 @@ fun OrderCard(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        IconButton(
+                        // Print Button with Printed Status Indicator
+                        Surface(
                             onClick = onPrint,
+                            shape = RoundedCornerShape(8.dp),
+                            color = when {
+                                isPrinted -> Color(0xFF10B981).copy(alpha = 0.12f)
+                                isConnected -> Color(0xFFF59E0B).copy(alpha = 0.15f)
+                                else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            },
+                            border = BorderStroke(
+                                width = 1.dp,
+                                color = when {
+                                    isPrinted -> Color(0xFF10B981).copy(alpha = 0.4f)
+                                    isConnected -> Color(0xFFF59E0B).copy(alpha = 0.4f)
+                                    else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
+                                }
+                            ),
                             modifier = Modifier.size(32.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Print,
-                                contentDescription = "Cetak",
-                                tint = if (isConnected) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(18.dp)
-                            )
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Default.Print,
+                                    contentDescription = if (isPrinted) "Sudah Dicetak" else "Belum Dicetak",
+                                    tint = when {
+                                        isPrinted -> Color(0xFF10B981)
+                                        isConnected -> Color(0xFFF59E0B)
+                                        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                    },
+                                    modifier = Modifier.size(17.dp)
+                                )
+
+                                // Indicator dot (Green = Dicetak, Amber = Belum Cetak)
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .padding(3.dp)
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (isPrinted) Color(0xFF10B981) else Color(0xFFF59E0B)
+                                        )
+                                )
+                            }
                         }
 
                         OrderStatusBadge(status = status, color = accentColor)
@@ -778,14 +818,14 @@ fun OrderStatusBadge(status: String, color: Color) {
 @Composable
 fun OrderDetailDialog(
     order: OrderSessionDto,
+    isPrinted: Boolean = false,
     onDismiss: () -> Unit,
     onPrint: () -> Unit,
     onStatusChange: (Long, String) -> Unit
 ) {
     val status = order.status?.uppercase() ?: "PENDING"
     val isTakeaway = order.orderType.equals("takeaway", ignoreCase = true)
-    val tableName = order.tableSession?.tableMeja?.name
-        ?: if (isTakeaway) "Bungkus / Takeaway" else "Pesanan Meja"
+    val tableName = order.getDisplayTableName()
     val waiterName = order.user?.name ?: "Staf #${order.userId ?: "-"}"
     val items = order.items ?: emptyList()
     val totalPrice = order.calculateTotal()
@@ -818,11 +858,28 @@ fun OrderDetailDialog(
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface
                         )
-                        Text(
-                            text = "Pesanan #${order.id} • ${order.formatTime()}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "Pesanan #${order.id} • ${order.formatTime()}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = if (isPrinted) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0xFFF59E0B).copy(alpha = 0.15f)
+                            ) {
+                                Text(
+                                    text = if (isPrinted) "Sudah Cetak" else "Belum Cetak",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isPrinted) Color(0xFF10B981) else Color(0xFFF59E0B),
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
                         Text(
                             text = "Pelayan: $waiterName",
                             style = MaterialTheme.typography.labelSmall,
@@ -945,11 +1002,18 @@ fun OrderDetailDialog(
                     OutlinedButton(
                         onClick = onPrint,
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(10.dp)
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = if (isPrinted) Color(0xFF10B981) else Color(0xFFF59E0B)
+                        ),
+                        border = BorderStroke(
+                            1.dp,
+                            if (isPrinted) Color(0xFF10B981).copy(alpha = 0.5f) else Color(0xFFF59E0B).copy(alpha = 0.5f)
+                        )
                     ) {
                         Icon(imageVector = Icons.Default.Print, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("Cetak")
+                        Text(if (isPrinted) "Cetak Semula" else "Cetak Dapur")
                     }
 
                     if (order.id != null) {

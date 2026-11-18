@@ -116,6 +116,7 @@ fun PrinterScreen(
         isRefreshing = orderViewModel.isRefreshingOrders,
         currentOutlet = orderViewModel.currentOutlet,
         orders = orderViewModel.orders,
+        printedOrderIds = printQueueViewModel.printedOrderIds,
         onRefreshOrders = { orderViewModel.fetchOrdersFromApi() },
         onToggleSettings = { 
             isSettingsOpen = it
@@ -175,6 +176,7 @@ fun PrinterContent(
     isRefreshing: Boolean = false,
     currentOutlet: OutletDto?,
     orders: List<OrderSessionDto>,
+    printedOrderIds: Set<String> = emptySet(),
     onRefreshOrders: () -> Unit = {},
     onToggleSettings: (Boolean) -> Unit,
     onTogglePrinter: (Boolean) -> Unit,
@@ -406,6 +408,7 @@ fun PrinterContent(
                 DashboardScreen(
                     orders = orders,
                     isConnected = isConnected,
+                    printedOrderIds = printedOrderIds,
                     onStatusChange = onStatusChange,
                     onPrintOrder = onPrintOrder,
                     onRefresh = onRefreshOrders

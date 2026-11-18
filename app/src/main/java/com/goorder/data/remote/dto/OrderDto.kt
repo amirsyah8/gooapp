@@ -156,9 +156,20 @@ fun OrderSessionDto.totalItemCount(): Int {
     return items?.sumOf { it.quantity } ?: 0
 }
 
+fun OrderSessionDto.getDisplayTableName(): String {
+    val rawTableName = tableSession?.tableMeja?.name
+    val isTakeaway = orderType.equals("takeaway", ignoreCase = true)
+    val hasValidTable = !rawTableName.isNullOrBlank() && !rawTableName.equals("TAKEAWAY", ignoreCase = true)
+
+    return when {
+        isTakeaway && hasValidTable -> "TAKEAWAY ($rawTableName)"
+        isTakeaway -> "TAKEAWAY"
+        else -> rawTableName ?: "Pesanan Meja"
+    }
+}
+
 fun OrderSessionDto.toPrintText(): String {
-    val tableName = tableSession?.tableMeja?.name
-        ?: if (orderType.equals("takeaway", ignoreCase = true)) "Bungkus / Takeaway" else "Pesanan Meja"
+    val tableName = getDisplayTableName()
     val waiterName = user?.name ?: "Staf #${userId ?: "-"}"
     val sb = StringBuilder()
     sb.append("================================\r\n")
@@ -180,12 +191,12 @@ fun OrderSessionDto.toPrintText(): String {
             sb.append("   Nota: ${item.notes}\r\n")
         }
         val subtotal = item.calculateSubtotal()
-        sb.append("   Subtotal: RM ${String.format(Locale.US, "%.2f", subtotal)}\r\n")
+//        sb.append("   Subtotal: RM ${String.format(Locale.US, "%.2f", subtotal)}\r\n")
     }
     sb.append("--------------------------------\r\n")
     val total = calculateTotal()
     val totalCount = totalItemCount()
-    sb.append("Jumlah  : RM ${String.format(Locale.US, "%.2f", total)} ($totalCount item)\r\n")
+//    sb.append("Jumlah  : RM ${String.format(Locale.US, "%.2f", total)} ($totalCount item)\r\n")
     sb.append("Status  : ${status ?: "PENDING"}\r\n")
     sb.append("================================\r\n")
     return sb.toString()

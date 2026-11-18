@@ -35,11 +35,24 @@ class PrintQueueViewModel(application: Application) : AndroidViewModel(applicati
     var isAutoPrintEnabled by mutableStateOf(false)
         private set
 
+    var savedPrintedIds by mutableStateOf<Set<String>>(emptySet())
+        private set
+
+    val printedOrderIds: Set<String>
+        get() = savedPrintedIds
+
     private var isMqttInitialized = false
 
     init {
         viewModelScope.launch {
-            isAutoPrintEnabled = sessionManager.getAutoPrintEnabled()
+            sessionManager.autoPrintData.collect {
+                isAutoPrintEnabled = it
+            }
+        }
+        viewModelScope.launch {
+            sessionManager.printedOrdersData.collect {
+                savedPrintedIds = it
+            }
         }
     }
 
@@ -72,12 +85,15 @@ class PrintQueueViewModel(application: Application) : AndroidViewModel(applicati
      */
     fun syncWithOrders(orderDtos: List<OrderSessionDto>, isFirstLoad: Boolean) {
         val apiRequests = orderDtos.map { dto ->
+            val orderIdStr = dto.id?.toString() ?: UUID.randomUUID().toString()
+            val alreadyPrinted = savedPrintedIds.contains(orderIdStr) ||
+                    dto.status?.equals("SERVED", ignoreCase = true) == true ||
+                    dto.status?.equals("COMPLETED", ignoreCase = true) == true
+
             PrintRequest(
-                id = dto.id?.toString() ?: UUID.randomUUID().toString(),
+                id = orderIdStr,
                 data = dto.toPrintText(),
-                isPrinted = isFirstLoad ||
-                        dto.status?.equals("SERVED", ignoreCase = true) == true ||
-                        dto.status?.equals("COMPLETED", ignoreCase = true) == true
+                isPrinted = alreadyPrinted
             )
         }
 
@@ -121,14 +137,14 @@ class PrintQueueViewModel(application: Application) : AndroidViewModel(applicati
         printRequests = printRequests.map {
             if (it.id == requestId) it.copy(isPrinted = true) else it
         }
+        savedPrintedIds = savedPrintedIds + requestId
+        viewModelScope.launch {
+            sessionManager.savePrintedOrderId(requestId)
+        }
     }
 
     fun toggleAutoPrint(enabled: Boolean) {
         isAutoPrintEnabled = enabled
-        if (enabled) {
-            // Tandakan semua sedia ada sebagai sudah diproses
-            printRequests = printRequests.map { it.copy(isPrinted = true) }
-        }
         viewModelScope.launch {
             sessionManager.saveAutoPrint(enabled)
         }
