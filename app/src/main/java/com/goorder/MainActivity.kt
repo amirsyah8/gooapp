@@ -10,7 +10,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import com.goorder.ui.navigation.NavGraph
-import com.goorder.ui.theme.LoginTheme
+import com.goorder.ui.theme.GoOrderTheme
 
 class MainActivity : ComponentActivity() {
 
@@ -26,7 +26,7 @@ class MainActivity : ComponentActivity() {
         requestAppPermissions()
 
         setContent {
-            LoginTheme {
+            GoOrderTheme {
                 NavGraph()
             }
         }

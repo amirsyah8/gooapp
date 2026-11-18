@@ -29,7 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.goorder.BuildConfig
 import com.goorder.R
-import com.goorder.ui.theme.LoginTheme
+import com.goorder.ui.theme.GoOrderTheme
 
 @Composable
 fun LoginScreen(
@@ -309,7 +309,7 @@ fun LoginContent(
 @Preview(showBackground = true)
 @Composable
 fun LoginScreenPreview() {
-    LoginTheme {
+    GoOrderTheme {
         LoginContent(
             email = "test@example.com",
             onEmailChange = {},
