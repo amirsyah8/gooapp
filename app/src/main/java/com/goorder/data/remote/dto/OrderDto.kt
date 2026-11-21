@@ -57,6 +57,7 @@ data class TableMejaDto(
 data class OrderMenuDto(
     val id: Long? = null,
     val hashid: String? = null,
+    @SerialName("cart_id") val cartId: String? = null,
     @SerialName("order_session_id") val orderSessionId: Long? = null,
     @SerialName("menu_id") val menuId: Long? = null,
     val name: String? = null,
@@ -182,6 +183,20 @@ fun OrderMenuDto.matchesPrinterUser(targetUserId: String?): Boolean {
         val sHashId = staff.user?.hashid
         (sUserId != null && sUserId == targetUserId) || (sHashId != null && sHashId == targetUserId)
     }
+}
+
+fun OrderSessionDto.isOrderPrinted(printedIds: Set<String>, filterUserId: String? = null): Boolean {
+    val targetItems = if (!filterUserId.isNullOrBlank()) {
+        val matched = items?.filter { it.matchesPrinterUser(filterUserId) } ?: emptyList()
+        if (matched.isNotEmpty()) matched else (items ?: emptyList())
+    } else {
+        items ?: emptyList()
+    }
+    val cartIds = targetItems.mapNotNull { it.cartId }.filter { it.isNotBlank() }
+    if (cartIds.isNotEmpty() && cartIds.all { printedIds.contains(it) }) {
+        return true
+    }
+    return id != null && printedIds.contains(id.toString())
 }
 
 fun OrderSessionDto.toPrintText(filterUserId: String? = null): String? {
@@ -409,4 +424,57 @@ fun formatMqttOrderToReceipt(payload: String, currentUserId: String?): String? {
     }
 
     return null
+}
+
+/**
+ * Mengekstrak senarai cart_id daripada payload MQTT bagi item-item yang
+ * sepadan dengan staf pencetak yang sedang login.
+ */
+fun extractCartIdsFromMqttPayload(payload: String, currentUserId: String?): List<String> {
+    if (currentUserId.isNullOrBlank()) return emptyList()
+    val root = try {
+        JSONObject(payload.trim())
+    } catch (_: Exception) {
+        return emptyList()
+    }
+
+    fun isStaffMatched(printerArray: JSONArray?): Boolean {
+        if (printerArray == null) return false
+        for (i in 0 until printerArray.length()) {
+            val staff = printerArray.optJSONObject(i) ?: continue
+            val staffUserId = staff.optString("user_id").takeIf { it.isNotBlank() && it != "0" }
+                ?: staff.optJSONObject("user")?.optString("id")
+            val staffUserHashId = staff.optJSONObject("user")?.optString("hashid")
+
+            if ((staffUserId != null && staffUserId == currentUserId) ||
+                (staffUserHashId != null && staffUserHashId == currentUserId)) {
+                return true
+            }
+        }
+        return false
+    }
+
+    val cartIds = mutableListOf<String>()
+
+    if (root.has("items")) {
+        val itemsArray = root.optJSONArray("items")
+        if (itemsArray != null) {
+            for (i in 0 until itemsArray.length()) {
+                val item = itemsArray.optJSONObject(i) ?: continue
+                val printers = item.optJSONArray("printer")
+                if (isStaffMatched(printers)) {
+                    val cid = item.optString("cart_id").takeIf { it.isNotBlank() }
+                    if (cid != null) cartIds.add(cid)
+                }
+            }
+        }
+    } else {
+        val printers = root.optJSONArray("printer")
+        if (isStaffMatched(printers)) {
+            val cid = root.optString("cart_id").takeIf { it.isNotBlank() }
+            if (cid != null) cartIds.add(cid)
+        }
+    }
+
+    return cartIds
 }

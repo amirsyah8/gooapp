@@ -10,7 +10,9 @@ import androidx.lifecycle.viewModelScope
 import com.goorder.data.local.SessionManager
 import com.goorder.data.remote.MqttManager
 import com.goorder.data.remote.dto.OrderSessionDto
+import com.goorder.data.remote.dto.extractCartIdsFromMqttPayload
 import com.goorder.data.remote.dto.formatMqttOrderToReceipt
+import com.goorder.data.remote.dto.matchesPrinterUser
 import com.goorder.data.remote.dto.toPrintText
 import com.goorder.domain.model.PrintRequest
 import com.goorder.service.BluetoothPrinterService
@@ -79,9 +81,20 @@ class PrintQueueViewModel(application: Application) : AndroidViewModel(applicati
                     Log.d("PrintQueueViewModel", "Mesej MQTT diterima. Memeriksa printer untuk user ID: $userId")
                     val formattedReceipt = formatMqttOrderToReceipt(payload, userId)
                     if (formattedReceipt != null) {
-                        Log.d("PrintQueueViewModel", "✅ MQTT order sepadan dengan printer staf ID $userId! Menambah ke baris gilir cetak.")
-                        val newRequest = PrintRequest(data = formattedReceipt)
-                        addPrintRequest(newRequest)
+                        val cartIds = extractCartIdsFromMqttPayload(payload, userId)
+                        val alreadyPrinted = cartIds.isNotEmpty() && cartIds.all { savedPrintedIds.contains(it) }
+                        if (!alreadyPrinted) {
+                            Log.d("PrintQueueViewModel", "✅ MQTT order sepadan dengan printer staf ID $userId! Menambah ke baris gilir cetak.")
+                            val requestId = cartIds.firstOrNull() ?: UUID.randomUUID().toString()
+                            val newRequest = PrintRequest(
+                                id = requestId,
+                                data = formattedReceipt,
+                                cartIds = cartIds
+                            )
+                            addPrintRequest(newRequest)
+                        } else {
+                            Log.d("PrintQueueViewModel", "ℹ️ MQTT order diabaikan: semua cart_id sudah dicetak.")
+                        }
                     } else {
                         Log.d("PrintQueueViewModel", "ℹ️ MQTT order diabaikan: tiada item untuk printer staf ID $userId.")
                     }
@@ -108,15 +121,26 @@ class PrintQueueViewModel(application: Application) : AndroidViewModel(applicati
             val userId = currentUserId ?: sessionManager.userData.firstOrNull()?.id
             val apiRequests = orderDtos.mapNotNull { dto ->
                 val printData = dto.toPrintText(filterUserId = userId) ?: return@mapNotNull null
-                val orderIdStr = dto.id?.toString() ?: UUID.randomUUID().toString()
-                val alreadyPrinted = savedPrintedIds.contains(orderIdStr) ||
+                val targetItems = if (!userId.isNullOrBlank()) {
+                    dto.items?.filter { it.matchesPrinterUser(userId) } ?: emptyList()
+                } else {
+                    dto.items ?: emptyList()
+                }
+                val cartIds = targetItems.mapNotNull { it.cartId }.filter { it.isNotBlank() }
+                val orderIdStr = dto.id?.toString()
+
+                val alreadyPrinted = (cartIds.isNotEmpty() && cartIds.all { savedPrintedIds.contains(it) }) ||
+                        (orderIdStr != null && savedPrintedIds.contains(orderIdStr)) ||
                         dto.status?.equals("SERVED", ignoreCase = true) == true ||
                         dto.status?.equals("COMPLETED", ignoreCase = true) == true
 
+                val requestId = cartIds.firstOrNull() ?: orderIdStr ?: UUID.randomUUID().toString()
+
                 PrintRequest(
-                    id = orderIdStr,
+                    id = requestId,
                     data = printData,
-                    isPrinted = alreadyPrinted
+                    isPrinted = alreadyPrinted,
+                    cartIds = cartIds
                 )
             }
 
@@ -157,14 +181,36 @@ class PrintQueueViewModel(application: Application) : AndroidViewModel(applicati
         printRequests = printRequests.filter { it.id != id }
     }
 
-    fun markAsPrinted(requestId: String) {
-        printRequests = printRequests.map {
-            if (it.id == requestId) it.copy(isPrinted = true) else it
+    fun markAsPrinted(ids: Collection<String>) {
+        if (ids.isEmpty()) return
+        val idSet = ids.toSet()
+        printRequests = printRequests.map { req ->
+            if (idSet.contains(req.id) || req.cartIds.any { idSet.contains(it) }) {
+                req.copy(isPrinted = true)
+            } else {
+                req
+            }
         }
-        savedPrintedIds = savedPrintedIds + requestId
+        savedPrintedIds = savedPrintedIds + idSet
         viewModelScope.launch {
-            sessionManager.savePrintedOrderId(requestId)
+            sessionManager.savePrintedOrderIds(idSet)
         }
+    }
+
+    fun markAsPrinted(requestId: String) {
+        markAsPrinted(listOf(requestId))
+    }
+
+    fun markOrderAsPrinted(order: OrderSessionDto, targetUserId: String? = null) {
+        val targetItems = if (!targetUserId.isNullOrBlank()) {
+            val matched = order.items?.filter { it.matchesPrinterUser(targetUserId) } ?: emptyList()
+            if (matched.isNotEmpty()) matched else (order.items ?: emptyList())
+        } else {
+            order.items ?: emptyList()
+        }
+        val cartIds = targetItems.mapNotNull { it.cartId }.filter { it.isNotBlank() }
+        val idsToSave = (cartIds + listOfNotNull(order.id?.toString())).filter { it.isNotBlank() }
+        markAsPrinted(idsToSave)
     }
 
     fun toggleAutoPrint(enabled: Boolean) {
@@ -185,7 +231,8 @@ class PrintQueueViewModel(application: Application) : AndroidViewModel(applicati
                     if (!req.isPrinted) {
                         val success = service.printText(req.data)
                         if (success) {
-                            markAsPrinted(req.id)
+                            val idsToMark = (req.cartIds + req.id).filter { it.isNotBlank() }
+                            markAsPrinted(idsToMark)
                         }
                     }
                 }

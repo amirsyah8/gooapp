@@ -258,7 +258,7 @@ fun DashboardScreen(
                 contentPadding = PaddingValues(bottom = 16.dp)
             ) {
                 items(filteredOrders, key = { it.id ?: 0L }) { order ->
-                    val isPrinted = printedOrderIds.contains(order.id?.toString())
+                    val isPrinted = order.isOrderPrinted(printedOrderIds)
                     OrderCard(
                         order = order,
                         isConnected = isConnected,
@@ -350,7 +350,7 @@ fun DashboardScreen(
     selectedOrderForDetail?.let { order ->
         OrderDetailDialog(
             order = order,
-            isPrinted = printedOrderIds.contains(order.id?.toString()),
+            isPrinted = order.isOrderPrinted(printedOrderIds),
             onDismiss = { selectedOrderForDetail = null },
             onPrint = { onPrintOrder(order) },
             onStatusChange = { orderId, newStatus ->

@@ -93,7 +93,7 @@ fun AppSidebar(
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
-                        text = currentOutlet?.name ?: "Admin Dashboard",
+                        text = currentOutlet?.name ?: "Dashboard",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
                         maxLines = 1,

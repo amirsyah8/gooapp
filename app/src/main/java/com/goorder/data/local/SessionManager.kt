@@ -154,6 +154,14 @@ class SessionManager(private val context: Context) {
         }
     }
 
+    suspend fun savePrintedOrderIds(ids: Collection<String>) {
+        if (ids.isEmpty()) return
+        context.dataStore.edit { preferences ->
+            val current = preferences[PRINTED_ORDERS_KEY] ?: emptySet()
+            preferences[PRINTED_ORDERS_KEY] = current + ids
+        }
+    }
+
     suspend fun clearSession() {
         context.dataStore.edit { preferences ->
             preferences.remove(USER_KEY)
@@ -164,7 +172,9 @@ class SessionManager(private val context: Context) {
             preferences.remove(PRINTER_NAME_KEY)
             preferences.remove(AUTO_PRINT_KEY)
             preferences.remove(AUTO_CUT_KEY)
-            preferences.remove(PRINTED_ORDERS_KEY)
+            // Kekalkan PRINTED_ORDERS_KEY supaya status cetakan (cart_id & order_id)
+            // kekal disimpan dan boleh dipadankan apabila pengguna log masuk semula
+            // preferences.remove(PRINTED_ORDERS_KEY)
         }
     }
 }

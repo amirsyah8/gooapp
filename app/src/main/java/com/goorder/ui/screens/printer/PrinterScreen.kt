@@ -224,9 +224,9 @@ fun PrinterScreen(
                             return@launch
                         }
                         val success = printerViewModel.printText(printData)
-                        if (success && order.id != null) {
-                            printQueueViewModel.markAsPrinted(order.id.toString())
-                            android.widget.Toast.makeText(context, "Mencetak pesanan #${order.id}...", android.widget.Toast.LENGTH_SHORT).show()
+                        if (success) {
+                            printQueueViewModel.markOrderAsPrinted(order, targetUserId)
+                            android.widget.Toast.makeText(context, "Mencetak pesanan #${order.id ?: ""}...", android.widget.Toast.LENGTH_SHORT).show()
                         } else {
                             android.widget.Toast.makeText(context, "Gagal mencetak pesanan", android.widget.Toast.LENGTH_SHORT).show()
                         }

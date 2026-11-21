@@ -6,5 +6,6 @@ data class PrintRequest(
     val id: String = UUID.randomUUID().toString(),
     val data: String,
     val isPrinted: Boolean = false,
-    val timestamp: Long = System.currentTimeMillis()
+    val timestamp: Long = System.currentTimeMillis(),
+    val cartIds: List<String> = emptyList()
 )
