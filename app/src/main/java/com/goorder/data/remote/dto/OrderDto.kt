@@ -69,7 +69,8 @@ data class OrderMenuDto(
     @SerialName("note_pay") val notePay: Boolean? = false,
     val status: String? = null,
     @SerialName("add_ons") val addOns: List<OrderMenuAddonDto>? = emptyList(),
-    val printer: List<StaffOutletResponse>? = emptyList()
+    val printer: List<StaffOutletResponse>? = emptyList(),
+    val printed: Boolean = false
 )
 
 @Serializable
@@ -193,8 +194,11 @@ fun OrderSessionDto.isOrderPrinted(printedIds: Set<String>, filterUserId: String
         items ?: emptyList()
     }
     val cartIds = targetItems.mapNotNull { it.cartId }.filter { it.isNotBlank() }
-    if (cartIds.isNotEmpty() && cartIds.all { printedIds.contains(it) }) {
-        return true
+    if (cartIds.isNotEmpty()) {
+        val allPrinted = targetItems.all { item ->
+            item.printed || (item.cartId != null && printedIds.contains(item.cartId))
+        }
+        if (allPrinted) return true
     }
     return id != null && printedIds.contains(id.toString())
 }

@@ -96,6 +96,45 @@ class MqttManager {
         }
     }
 
+    /**
+     * Menghantar senarai cart_id yang telah dicetak ke broker MQTT pada topik pos/order/printed
+     * supaya backend Go mengemas kini lajur printed = true dalam database server.
+     */
+    fun publishPrintedCartIds(cartIds: List<String>) {
+        val validUuids = cartIds.filter { id ->
+            try {
+                UUID.fromString(id)
+                true
+            } catch (_: Exception) {
+                false
+            }
+        }
+        if (validUuids.isEmpty()) return
+
+        scope.launch {
+            try {
+                val client = mqttClient
+                if (client != null && client.isConnected) {
+                    val jsonArray = JSONArray()
+                    validUuids.forEach { jsonArray.put(it) }
+                    val jsonObject = JSONObject().apply {
+                        put("cart_ids", jsonArray)
+                    }
+                    val payload = jsonObject.toString().toByteArray(Charsets.UTF_8)
+                    val message = MqttMessage(payload).apply {
+                        qos = 1
+                    }
+                    client.publish("pos/order/printed", message)
+                    Log.d("MqttManager", "✅ Berjaya publish ${validUuids.size} cart_id ke [pos/order/printed]: $jsonObject")
+                } else {
+                    Log.w("MqttManager", "⚠️ Tidak dapat publish ke [pos/order/printed]: MQTT client belum bersambung")
+                }
+            } catch (e: Exception) {
+                Log.e("MqttManager", "❌ Ralat publish ke [pos/order/printed]: ${e.message}", e)
+            }
+        }
+    }
+
     fun disconnect() {
         scope.launch {
             try {
