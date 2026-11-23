@@ -1,6 +1,7 @@
 package com.goorder.ui.screens.printer
 
 import android.annotation.SuppressLint
+import android.app.Application
 import android.bluetooth.BluetoothDevice
 import android.content.ComponentName
 import android.content.Context
@@ -10,18 +11,19 @@ import android.os.IBinder
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.goorder.data.local.SessionManager
 import com.goorder.service.BluetoothPrinterService
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 
-class PrinterViewModel : ViewModel() {
+class PrinterViewModel(application: Application) : AndroidViewModel(application) {
 
     @SuppressLint("StaticFieldLeak")
     private var bluetoothService: BluetoothPrinterService? = null
-    private var sessionManager: SessionManager? = null
+    private val sessionManager = SessionManager(application)
     private var isBound = false
 
     var isConnected by mutableStateOf(false)
@@ -42,6 +44,9 @@ class PrinterViewModel : ViewModel() {
     init {
         // Pantau singleton instance jika servis sudah berjalan di latar belakang
         observeServiceInstance(BluetoothPrinterService.instance)
+        viewModelScope.launch {
+            isAutoCutEnabled = sessionManager.getAutoCutEnabled()
+        }
     }
 
     private fun observeServiceInstance(service: BluetoothPrinterService?) {
@@ -84,19 +89,15 @@ class PrinterViewModel : ViewModel() {
     }
 
     fun initSessionManager(context: Context) {
-        if (sessionManager == null) {
-            val sm = SessionManager(context.applicationContext)
-            sessionManager = sm
-            viewModelScope.launch {
-                isAutoCutEnabled = sm.getAutoCutEnabled()
-            }
+        viewModelScope.launch {
+            isAutoCutEnabled = sessionManager.getAutoCutEnabled()
         }
     }
 
     fun toggleAutoCut(enabled: Boolean) {
         isAutoCutEnabled = enabled
         viewModelScope.launch {
-            sessionManager?.saveAutoCut(enabled)
+            sessionManager.saveAutoCut(enabled)
         }
     }
 
@@ -129,11 +130,23 @@ class PrinterViewModel : ViewModel() {
 
     fun testPrint(onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
+            val user = sessionManager.userData.firstOrNull()
+            val staffName = user?.name ?: user?.fname ?: "Umum"
+            val staffRole = user?.roleStr ?: user?.type ?: "Staf"
+            val staffId = user?.id ?: "-"
+            val outletName = sessionManager.getSavedOutletName()
+            val printerName = connectedDeviceName ?: sessionManager.getSavedPrinterName() ?: "Thermal"
+
             val testText = StringBuilder().apply {
                 append("================================\r\n")
                 append("     GOORDER UJIAN CETAK        \r\n")
                 append("================================\r\n")
-                append("Pencetak: ${connectedDeviceName ?: "Thermal"}\r\n")
+                if (!outletName.isNullOrBlank()) {
+                    append("Outlet  : $outletName\r\n")
+                }
+                append("Pengguna: $staffName ($staffRole)\r\n")
+                append("ID Staf : $staffId\r\n")
+                append("Pencetak: $printerName\r\n")
                 append("Tarikh  : ${java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())}\r\n")
                 append("Status  : Sambungan Berjaya!\r\n")
                 append("--------------------------------\r\n")

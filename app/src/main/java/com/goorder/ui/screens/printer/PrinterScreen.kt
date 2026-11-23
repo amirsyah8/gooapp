@@ -59,6 +59,11 @@ fun PrinterScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    // ── Segerakkan pengguna semasa ke PrintQueueViewModel ──
+    LaunchedEffect(user) {
+        printQueueViewModel.setCurrentUser(user)
+    }
+
     // ── Wire callbacks antara ViewModels ──
     LaunchedEffect(Unit) {
         // Apabila OrderViewModel dapat orders baru dari API, sync ke print queue

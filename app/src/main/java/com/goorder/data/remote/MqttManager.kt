@@ -18,12 +18,14 @@ import java.util.UUID
 class MqttManager {
     private var mqttClient: MqttClient? = null
     private val topicToSubscribe = "pos/order/print"
+    private val topicTestPrint = "pos/printer/test"
     private val scope = CoroutineScope(Dispatchers.IO)
 
     fun connect(
         username: String? = null,
         password: String? = null,
-        onPrintOrderReceived: (String) -> Unit
+        onPrintOrderReceived: (String) -> Unit,
+        onTestPrintReceived: ((String) -> Unit)? = null
     ) {
         if (mqttClient?.isConnected == true) return
 
@@ -55,11 +57,13 @@ class MqttManager {
 
                 mqttClient?.setCallback(object : MqttCallbackExtended {
                     override fun connectComplete(reconnect: Boolean, serverURI: String?) {
-                        Log.d("MqttManager", "Berjaya connect ke MQTT Broker ($serverURI)! Subscribing ke: $topicToSubscribe")
+                        Log.d("MqttManager", "Berjaya connect ke MQTT Broker ($serverURI)! Subscribing ke: $topicToSubscribe & $topicTestPrint")
                         try {
                             mqttClient?.subscribe(topicToSubscribe, 1)
+                            mqttClient?.subscribe(topicTestPrint, 1)
+                            Log.d("MqttManager", "Berjaya melanggan topik: $topicToSubscribe & $topicTestPrint")
                         } catch (e: Exception) {
-                            Log.e("MqttManager", "Gagal subscribe ke $topicToSubscribe", e)
+                            Log.e("MqttManager", "Gagal subscribe ke topik MQTT", e)
                         }
                     }
 
@@ -69,20 +73,17 @@ class MqttManager {
 
                     override fun messageArrived(topic: String?, message: MqttMessage?) {
                         val payload = message?.payload?.let { String(it) } ?: ""
-//                        val trimmed = payload.trim()
-//                        val formattedPayload = try {
-//                            when {
-//                                trimmed.startsWith("{") -> JSONObject(trimmed).toString(2)
-//                                trimmed.startsWith("[") -> JSONArray(trimmed).toString(2)
-//                                else -> payload
-//                            }
-//                        } catch (_: Exception) {
-//                            payload
-//                        }
                         Log.d("MqttManager", "Mesej MQTT diterima pada topik [$topic]:\n$payload")
 
-                        if (topic == topicToSubscribe && payload.isNotBlank()) {
-                            onPrintOrderReceived(payload)
+                        when (topic) {
+                            topicToSubscribe -> {
+                                if (payload.isNotBlank()) {
+                                    onPrintOrderReceived(payload)
+                                }
+                            }
+                            topicTestPrint -> {
+                                onTestPrintReceived?.invoke(payload)
+                            }
                         }
                     }
 

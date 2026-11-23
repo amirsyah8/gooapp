@@ -15,9 +15,11 @@ import com.goorder.data.remote.dto.formatMqttOrderToReceipt
 import com.goorder.data.remote.dto.matchesPrinterUser
 import com.goorder.data.remote.dto.toPrintText
 import com.goorder.domain.model.PrintRequest
+import com.goorder.domain.model.User
 import com.goorder.service.BluetoothPrinterService
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
+import org.json.JSONObject
 import java.util.UUID
 
 /**
@@ -50,6 +52,12 @@ class PrintQueueViewModel(application: Application) : AndroidViewModel(applicati
 
     private var isMqttInitialized = false
 
+    fun setCurrentUser(user: User?) {
+        val newId = user?.id?.takeIf { it.isNotBlank() }
+        currentUserId = newId
+        Log.d("PrintQueueViewModel", "setCurrentUser: currentUserId=$currentUserId (${user?.name})")
+    }
+
     init {
         viewModelScope.launch {
             sessionManager.autoPrintData.collect {
@@ -62,8 +70,11 @@ class PrintQueueViewModel(application: Application) : AndroidViewModel(applicati
             }
         }
         viewModelScope.launch {
-            sessionManager.userData.collect {
-                currentUserId = it?.id
+            sessionManager.userData.collect { user ->
+                if (user?.id != null && user.id.isNotBlank()) {
+                    currentUserId = user.id
+                    Log.d("PrintQueueViewModel", "SessionManager userData collect: currentUserId=$currentUserId")
+                }
             }
         }
     }
@@ -99,7 +110,144 @@ class PrintQueueViewModel(application: Application) : AndroidViewModel(applicati
                         Log.d("PrintQueueViewModel", "ℹ️ MQTT order diabaikan: tiada item untuk printer staf ID $userId.")
                     }
                 }
+            },
+            onTestPrintReceived = { payload ->
+                viewModelScope.launch {
+                    handleTestPrintFromMqtt(payload)
+                }
             }
+        )
+    }
+
+    private suspend fun handleTestPrintFromMqtt(payload: String) {
+        val sessionUser = sessionManager.userData.firstOrNull()
+        val activeUserId = currentUserId ?: sessionUser?.id
+
+        Log.d("PrintQueueViewModel", "MQTT [pos/printer/test] diterima. activeUserId=$activeUserId, payload=$payload")
+
+        if (activeUserId.isNullOrBlank()) {
+            Log.w("PrintQueueViewModel", "⚠️ Ujian cetak MQTT dibatalkan: Tiada ID pengguna pencetak yang log masuk.")
+            return
+        }
+
+        if (payload.isBlank()) {
+            Log.w("PrintQueueViewModel", "⚠️ Ujian cetak MQTT diabaikan: Payload kosong.")
+            return
+        }
+
+        val trimmed = payload.trim()
+        var targetUserId: String? = null
+
+        try {
+            if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+                val json = JSONObject(trimmed)
+
+                // 1. Semak dalam "user" -> { "id": 7 } atau "hashid"
+                if (json.has("user") && json.optJSONObject("user") != null) {
+                    val userObj = json.getJSONObject("user")
+                    targetUserId = userObj.optString("id").takeIf { it.isNotBlank() && it != "0" }
+                        ?: userObj.optString("hashid").takeIf { it.isNotBlank() }
+                }
+
+                // 2. Semak fallback "user_id": 7
+                if (targetUserId.isNullOrBlank() && json.has("user_id")) {
+                    targetUserId = json.optString("user_id").takeIf { it.isNotBlank() && it != "0" }
+                }
+
+                // 3. Semak fallback "target_user_id": 7
+                if (targetUserId.isNullOrBlank() && json.has("target_user_id")) {
+                    targetUserId = json.optString("target_user_id").takeIf { it.isNotBlank() && it != "0" }
+                }
+
+                // 4. Semak fallback "id": 7
+                if (targetUserId.isNullOrBlank() && json.has("id")) {
+                    targetUserId = json.optString("id").takeIf { it.isNotBlank() && it != "0" }
+                }
+            } else if (trimmed.toLongOrNull() != null) {
+                // Jika payload terus dihantar nombor ID sahaja (cth: "7")
+                targetUserId = trimmed
+            }
+        } catch (e: Exception) {
+            Log.e("PrintQueueViewModel", "Ralat membaca JSON test print payload: ${e.message}", e)
+            return
+        }
+
+        // MESTILAH mempunyai id printer/staf dalam payload
+        if (targetUserId.isNullOrBlank()) {
+            Log.w("PrintQueueViewModel", "ℹ️ MQTT test print diabaikan: Tiada ID printer/user dalam payload.")
+            return
+        }
+
+        // Padankan sama ada nombor (cth: 7 == 7) atau string (cth: "7" == "7")
+        val targetLong = targetUserId.toLongOrNull()
+        val activeLong = activeUserId.toLongOrNull()
+
+        val isMatched = if (targetLong != null && activeLong != null) {
+            targetLong == activeLong
+        } else {
+            targetUserId.trim().equals(activeUserId.trim(), ignoreCase = true)
+        }
+
+        Log.d(
+            "PrintQueueViewModel",
+            "Semakan padanan test print: targetUserId=$targetUserId vs activeUserId=$activeUserId -> isMatched=$isMatched"
+        )
+
+        if (!isMatched) {
+            Log.i(
+                "PrintQueueViewModel",
+                "⛔ MQTT test print DIABAIKAN: Sasaran user_id=$targetUserId tidak sepadan dengan user_id app semasa ($activeUserId)."
+            )
+            return
+        }
+
+        Log.d("PrintQueueViewModel", "✅ MQTT test print sepadan dengan printer user ID $activeUserId! Memulakan cetakan...")
+
+        val staffName = sessionUser?.name ?: sessionUser?.fname ?: "Staf"
+        val staffRole = sessionUser?.roleStr ?: sessionUser?.type ?: "Admin"
+        val outletName = sessionManager.getSavedOutletName()
+        val printerName = BluetoothPrinterService.instance?.connectedDeviceName?.value
+            ?: sessionManager.getSavedPrinterName()
+            ?: "Thermal"
+
+        val testText = StringBuilder().apply {
+            append("================================\r\n")
+            append("     GOORDER UJIAN CETAK        \r\n")
+            append("   (DITERIMA MELALUI MQTT)      \r\n")
+            append("================================\r\n")
+            if (!outletName.isNullOrBlank()) {
+                append("Outlet  : $outletName\r\n")
+            }
+            append("Pengguna: $staffName ($staffRole)\r\n")
+            append("ID Staf : $activeUserId\r\n")
+            append("Pencetak: $printerName\r\n")
+            append("Tarikh  : ${java.text.SimpleDateFormat("dd/MM/yyyy HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())}\r\n")
+            append("Sumber  : Client Browser (MQTT)\r\n")
+            append("Status  : Sambungan Berjaya!\r\n")
+            append("--------------------------------\r\n")
+            append("1x Ujian Resit         RM 10.00\r\n")
+            append("1x Minuman Ujian       RM  5.00\r\n")
+            append("--------------------------------\r\n")
+            append("Jumlah                 RM 15.00\r\n")
+            append("================================\r\n")
+            append("  Terima Kasih - Sedia Digunakan\r\n")
+        }.toString()
+
+        val service = BluetoothPrinterService.instance
+        var printedSuccess = false
+        if (service != null && service.isConnected.value) {
+            printedSuccess = service.printText(testText)
+            Log.d("PrintQueueViewModel", "Hasil cetakan ujian MQTT: $printedSuccess")
+        } else {
+            Log.w("PrintQueueViewModel", "Pencetak belum bersambung semasa ujian cetakan MQTT diterima.")
+        }
+
+        addPrintRequest(
+            PrintRequest(
+                id = UUID.randomUUID().toString(),
+                data = testText,
+                isPrinted = printedSuccess
+            )
         )
     }
 
@@ -255,6 +403,7 @@ class PrintQueueViewModel(application: Application) : AndroidViewModel(applicati
     fun cleanup() {
         mqttManager.disconnect()
         printRequests = emptyList()
+        currentUserId = null
         isMqttInitialized = false
     }
 }
