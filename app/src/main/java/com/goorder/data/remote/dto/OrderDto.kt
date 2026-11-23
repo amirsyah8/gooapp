@@ -186,6 +186,10 @@ fun OrderMenuDto.matchesPrinterUser(targetUserId: String?): Boolean {
     }
 }
 
+fun OrderMenuDto.isItemPrinted(printedIds: Set<String>): Boolean {
+    return printed || (cartId != null && printedIds.contains(cartId))
+}
+
 fun OrderSessionDto.isOrderPrinted(printedIds: Set<String>, filterUserId: String? = null): Boolean {
     val targetItems = if (!filterUserId.isNullOrBlank()) {
         val matched = items?.filter { it.matchesPrinterUser(filterUserId) } ?: emptyList()
@@ -195,12 +199,11 @@ fun OrderSessionDto.isOrderPrinted(printedIds: Set<String>, filterUserId: String
     }
     val cartIds = targetItems.mapNotNull { it.cartId }.filter { it.isNotBlank() }
     if (cartIds.isNotEmpty()) {
-        val allPrinted = targetItems.all { item ->
-            item.printed || (item.cartId != null && printedIds.contains(item.cartId))
+        return targetItems.all { item ->
+            item.isItemPrinted(printedIds)
         }
-        if (allPrinted) return true
     }
-    return id != null && printedIds.contains(id.toString())
+    return false
 }
 
 fun OrderSessionDto.toPrintText(filterUserId: String? = null): String? {

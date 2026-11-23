@@ -278,7 +278,6 @@ class PrintQueueViewModel(application: Application) : AndroidViewModel(applicati
                 val orderIdStr = dto.id?.toString()
 
                 val alreadyPrinted = (cartIds.isNotEmpty() && targetItems.all { it.printed || savedPrintedIds.contains(it.cartId) }) ||
-                        (orderIdStr != null && savedPrintedIds.contains(orderIdStr)) ||
                         dto.status?.equals("SERVED", ignoreCase = true) == true ||
                         dto.status?.equals("COMPLETED", ignoreCase = true) == true
 
@@ -357,8 +356,7 @@ class PrintQueueViewModel(application: Application) : AndroidViewModel(applicati
             order.items ?: emptyList()
         }
         val cartIds = targetItems.mapNotNull { it.cartId }.filter { it.isNotBlank() }
-        val idsToSave = (cartIds + listOfNotNull(order.id?.toString())).filter { it.isNotBlank() }
-        markAsPrinted(idsToSave)
+        markAsPrinted(cartIds)
 
         // Hantar cart_id ke MQTT pos/order/printed supaya backend Go kemas kini printed = true dalam DB
         if (cartIds.isNotEmpty()) {
@@ -384,11 +382,8 @@ class PrintQueueViewModel(application: Application) : AndroidViewModel(applicati
                     if (!req.isPrinted) {
                         val success = service.printText(req.data)
                         if (success) {
-                            val idsToMark = (req.cartIds + req.id).filter { it.isNotBlank() }
-                            markAsPrinted(idsToMark)
-
-                            // Hantar cart_id ke MQTT pos/order/printed jika auto-print berjaya
                             if (req.cartIds.isNotEmpty()) {
+                                markAsPrinted(req.cartIds)
                                 mqttManager.publishPrintedCartIds(req.cartIds)
                             }
                         }
@@ -404,6 +399,7 @@ class PrintQueueViewModel(application: Application) : AndroidViewModel(applicati
         mqttManager.disconnect()
         printRequests = emptyList()
         currentUserId = null
+        savedPrintedIds = emptySet()
         isMqttInitialized = false
     }
 }

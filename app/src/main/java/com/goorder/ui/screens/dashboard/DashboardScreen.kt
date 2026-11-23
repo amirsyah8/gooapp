@@ -48,6 +48,7 @@ fun DashboardScreen(
     orders: List<OrderSessionDto>,
     isConnected: Boolean,
     printedOrderIds: Set<String> = emptySet(),
+    currentUserId: String? = null,
     onStatusChange: (Long, String) -> Unit,
     onPrintOrder: (OrderSessionDto) -> Unit,
     onRefresh: () -> Unit
@@ -258,11 +259,12 @@ fun DashboardScreen(
                 contentPadding = PaddingValues(bottom = 16.dp)
             ) {
                 items(filteredOrders, key = { it.id ?: 0L }) { order ->
-                    val isPrinted = order.isOrderPrinted(printedOrderIds)
+                    val isPrinted = order.isOrderPrinted(printedOrderIds, filterUserId = currentUserId)
                     OrderCard(
                         order = order,
                         isConnected = isConnected,
                         isPrinted = isPrinted,
+                        printedOrderIds = printedOrderIds,
                         onCardClick = { selectedOrderForDetail = order },
                         onPrint = { onPrintOrder(order) },
                         onStatusChange = onStatusChange
@@ -350,7 +352,8 @@ fun DashboardScreen(
     selectedOrderForDetail?.let { order ->
         OrderDetailDialog(
             order = order,
-            isPrinted = order.isOrderPrinted(printedOrderIds),
+            isPrinted = order.isOrderPrinted(printedOrderIds, filterUserId = currentUserId),
+            printedOrderIds = printedOrderIds,
             onDismiss = { selectedOrderForDetail = null },
             onPrint = { onPrintOrder(order) },
             onStatusChange = { orderId, newStatus ->
@@ -426,6 +429,7 @@ fun OrderCard(
     order: OrderSessionDto,
     isConnected: Boolean,
     isPrinted: Boolean = false,
+    printedOrderIds: Set<String> = emptySet(),
     onCardClick: () -> Unit,
     onPrint: () -> Unit,
     onStatusChange: (Long, String) -> Unit
@@ -652,6 +656,16 @@ fun OrderCard(
                                     )
                                 }
 
+                                val isItemPrinted = item.isItemPrinted(printedOrderIds)
+                                Icon(
+                                    imageVector = Icons.Default.Print,
+                                    contentDescription = if (isItemPrinted) "Sudah dicetak" else "Belum dicetak",
+                                    tint = if (isItemPrinted) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+                                    modifier = Modifier
+                                        .size(13.dp)
+                                        .padding(top = 2.dp)
+                                )
+
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = itemName,
@@ -819,6 +833,7 @@ fun OrderStatusBadge(status: String, color: Color) {
 fun OrderDetailDialog(
     order: OrderSessionDto,
     isPrinted: Boolean = false,
+    printedOrderIds: Set<String> = emptySet(),
     onDismiss: () -> Unit,
     onPrint: () -> Unit,
     onStatusChange: (Long, String) -> Unit
@@ -919,13 +934,25 @@ fun OrderDetailDialog(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    text = "${item.quantity}× $itemName",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                    modifier = Modifier.weight(1f).padding(end = 8.dp)
-                                )
+                                Row(
+                                    modifier = Modifier.weight(1f).padding(end = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    val isItemPrinted = item.isItemPrinted(printedOrderIds)
+                                    Icon(
+                                        imageVector = Icons.Default.Print,
+                                        contentDescription = if (isItemPrinted) "Sudah dicetak" else "Belum dicetak",
+                                        tint = if (isItemPrinted) Color(0xFF10B981) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f),
+                                        modifier = Modifier.size(15.dp)
+                                    )
+                                    Text(
+                                        text = "${item.quantity}× $itemName",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
                                 Text(
                                     text = "RM ${String.format(Locale.US, "%.2f", subtotal)}",
                                     style = MaterialTheme.typography.bodyMedium,
