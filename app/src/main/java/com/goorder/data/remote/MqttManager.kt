@@ -18,6 +18,9 @@ import java.util.UUID
 class MqttManager {
     private var mqttClient: MqttClient? = null
     private val topicToSubscribe = "pos/order/print"
+    private val topicPrintManual = "pos/order/printmanual"
+    private val topicPrintManula = "pos/order/printmanula"
+    private val topicPrintForce = "pos/order/printforce"
     private val topicTestPrint = "pos/printer/test"
     private val scope = CoroutineScope(Dispatchers.IO)
 
@@ -25,7 +28,9 @@ class MqttManager {
         username: String? = null,
         password: String? = null,
         onPrintOrderReceived: (String) -> Unit,
-        onTestPrintReceived: ((String) -> Unit)? = null
+        onTestPrintReceived: ((String) -> Unit)? = null,
+        onPrintManualReceived: ((String) -> Unit)? = null,
+        onPrintForceReceived: ((String) -> Unit)? = null
     ) {
         if (mqttClient?.isConnected == true) return
 
@@ -57,13 +62,21 @@ class MqttManager {
 
                 mqttClient?.setCallback(object : MqttCallbackExtended {
                     override fun connectComplete(reconnect: Boolean, serverURI: String?) {
-                        Log.d("MqttManager", "Berjaya connect ke MQTT Broker ($serverURI)! Subscribing ke: $topicToSubscribe & $topicTestPrint")
-                        try {
-                            mqttClient?.subscribe(topicToSubscribe, 1)
-                            mqttClient?.subscribe(topicTestPrint, 1)
-                            Log.d("MqttManager", "Berjaya melanggan topik: $topicToSubscribe & $topicTestPrint")
-                        } catch (e: Exception) {
-                            Log.e("MqttManager", "Gagal subscribe ke topik MQTT", e)
+                        Log.d("MqttManager", "Berjaya connect ke MQTT Broker ($serverURI)! Melanggan topik-topik cetakan.")
+                        val topics = listOf(
+                            topicToSubscribe,
+                            topicPrintManual,
+                            topicPrintManula,
+                            topicPrintForce,
+                            topicTestPrint
+                        )
+                        topics.forEach { topic ->
+                            try {
+                                mqttClient?.subscribe(topic, 1)
+                                Log.d("MqttManager", "Berjaya melanggan topik: $topic")
+                            } catch (e: Exception) {
+                                Log.e("MqttManager", "Gagal subscribe ke topik MQTT: $topic", e)
+                            }
                         }
                     }
 
@@ -79,6 +92,24 @@ class MqttManager {
                             topicToSubscribe -> {
                                 if (payload.isNotBlank()) {
                                     onPrintOrderReceived(payload)
+                                }
+                            }
+                            topicPrintManual, topicPrintManula -> {
+                                if (payload.isNotBlank()) {
+                                    if (onPrintManualReceived != null) {
+                                        onPrintManualReceived.invoke(payload)
+                                    } else {
+                                        onPrintOrderReceived(payload)
+                                    }
+                                }
+                            }
+                            topicPrintForce -> {
+                                if (payload.isNotBlank()) {
+                                    if (onPrintForceReceived != null) {
+                                        onPrintForceReceived.invoke(payload)
+                                    } else {
+                                        onPrintOrderReceived(payload)
+                                    }
                                 }
                             }
                             topicTestPrint -> {

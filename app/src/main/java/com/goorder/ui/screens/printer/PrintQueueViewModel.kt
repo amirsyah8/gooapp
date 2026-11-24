@@ -88,27 +88,32 @@ class PrintQueueViewModel(application: Application) : AndroidViewModel(applicati
         mqttManager.connect(
             onPrintOrderReceived = { payload ->
                 viewModelScope.launch {
-                    val userId = currentUserId ?: sessionManager.userData.firstOrNull()?.id
-                    Log.d("PrintQueueViewModel", "Mesej MQTT diterima. Memeriksa printer untuk user ID: $userId")
-                    val formattedReceipt = formatMqttOrderToReceipt(payload, userId)
-                    if (formattedReceipt != null) {
-                        val cartIds = extractCartIdsFromMqttPayload(payload, userId)
-                        val alreadyPrinted = cartIds.isNotEmpty() && cartIds.all { savedPrintedIds.contains(it) }
-                        if (!alreadyPrinted) {
-                            Log.d("PrintQueueViewModel", "✅ MQTT order sepadan dengan printer staf ID $userId! Menambah ke baris gilir cetak.")
-                            val requestId = cartIds.firstOrNull() ?: UUID.randomUUID().toString()
-                            val newRequest = PrintRequest(
-                                id = requestId,
-                                data = formattedReceipt,
-                                cartIds = cartIds
-                            )
-                            addPrintRequest(newRequest)
-                        } else {
-                            Log.d("PrintQueueViewModel", "ℹ️ MQTT order diabaikan: semua cart_id sudah dicetak.")
-                        }
-                    } else {
-                        Log.d("PrintQueueViewModel", "ℹ️ MQTT order diabaikan: tiada item untuk printer staf ID $userId.")
-                    }
+                    handleOrderPrintFromMqtt(
+                        payload = payload,
+                        bypassAutoPrint = false,
+                        forcePrint = false,
+                        sourceTopic = "pos/order/print"
+                    )
+                }
+            },
+            onPrintManualReceived = { payload ->
+                viewModelScope.launch {
+                    handleOrderPrintFromMqtt(
+                        payload = payload,
+                        bypassAutoPrint = true,
+                        forcePrint = false,
+                        sourceTopic = "pos/order/printmanual"
+                    )
+                }
+            },
+            onPrintForceReceived = { payload ->
+                viewModelScope.launch {
+                    handleOrderPrintFromMqtt(
+                        payload = payload,
+                        bypassAutoPrint = true,
+                        forcePrint = true,
+                        sourceTopic = "pos/order/printforce"
+                    )
                 }
             },
             onTestPrintReceived = { payload ->
@@ -117,6 +122,73 @@ class PrintQueueViewModel(application: Application) : AndroidViewModel(applicati
                 }
             }
         )
+    }
+
+    /**
+     * Memproses mesej cetak pesanan dari topik MQTT (pos/order/print, pos/order/printmanual, pos/order/printforce).
+     *
+     * @param payload JSON string pesanan
+     * @param bypassAutoPrint Jika true, terus hantar cetakan ke pencetak walaupun suis auto-print dimatikan.
+     * @param forcePrint Jika true, terus cetak walaupun semua cart_id sudah pernah dicetak sebelumnya.
+     */
+    private suspend fun handleOrderPrintFromMqtt(
+        payload: String,
+        bypassAutoPrint: Boolean,
+        forcePrint: Boolean,
+        sourceTopic: String
+    ) {
+        val userId = currentUserId ?: sessionManager.userData.firstOrNull()?.id
+        Log.d("PrintQueueViewModel", "Mesej MQTT [$sourceTopic] diterima. Memeriksa printer untuk user ID: $userId")
+
+        val formattedReceipt = formatMqttOrderToReceipt(payload, userId)
+        if (formattedReceipt == null) {
+            Log.d("PrintQueueViewModel", "ℹ️ MQTT [$sourceTopic] diabaikan: tiada item untuk printer staf ID $userId.")
+            return
+        }
+
+        val cartIds = extractCartIdsFromMqttPayload(payload, userId)
+        val alreadyPrinted = cartIds.isNotEmpty() && cartIds.all { savedPrintedIds.contains(it) }
+
+        if (alreadyPrinted && !forcePrint) {
+            Log.d("PrintQueueViewModel", "ℹ️ MQTT [$sourceTopic] diabaikan: semua cart_id sudah dicetak (forcePrint=false).")
+            return
+        }
+
+        val requestId = cartIds.firstOrNull() ?: UUID.randomUUID().toString()
+
+        if (bypassAutoPrint || forcePrint) {
+            Log.d("PrintQueueViewModel", "⚡ MQTT [$sourceTopic] cetak terus (bypassAutoPrint=$bypassAutoPrint, forcePrint=$forcePrint)...")
+            val service = BluetoothPrinterService.instance
+            var printedSuccess = false
+
+            if (service != null && service.isConnected.value) {
+                printedSuccess = service.printText(formattedReceipt)
+                Log.d("PrintQueueViewModel", "Hasil cetakan MQTT [$sourceTopic]: $printedSuccess")
+                if (printedSuccess && cartIds.isNotEmpty()) {
+                    markAsPrinted(cartIds)
+                    mqttManager.publishPrintedCartIds(cartIds)
+                }
+            } else {
+                Log.w("PrintQueueViewModel", "⚠️ Pencetak belum bersambung semasa [$sourceTopic] diterima. Menambah ke baris gilir cetak.")
+                service?.autoConnectToPrinter()
+            }
+
+            val newRequest = PrintRequest(
+                id = requestId,
+                data = formattedReceipt,
+                isPrinted = printedSuccess,
+                cartIds = cartIds
+            )
+            addPrintRequest(newRequest)
+        } else {
+            Log.d("PrintQueueViewModel", "✅ MQTT order sepadan dengan printer staf ID $userId! Menambah ke baris gilir cetak.")
+            val newRequest = PrintRequest(
+                id = requestId,
+                data = formattedReceipt,
+                cartIds = cartIds
+            )
+            addPrintRequest(newRequest)
+        }
     }
 
     private suspend fun handleTestPrintFromMqtt(payload: String) {
@@ -255,7 +327,7 @@ class PrintQueueViewModel(application: Application) : AndroidViewModel(applicati
 
     /** Tambah print request baru (dari MQTT atau WebSocket). */
     fun addPrintRequest(request: PrintRequest) {
-        printRequests = printRequests + request
+        printRequests = printRequests.filter { it.id != request.id } + request
         checkAndAutoPrint(listOf(request))
     }
 
